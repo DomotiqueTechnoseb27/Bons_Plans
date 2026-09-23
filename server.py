@@ -391,6 +391,13 @@ class SafariError(RuntimeError):
     pass
 
 
+JS_HELP = ("Safari doit autoriser le JavaScript envoyé par l'application. Dans Safari : menu Safari > Réglages > "
+           "Avancées, cochez « Afficher les fonctionnalités pour les développeurs web ». Puis, selon votre version : "
+           "Réglages > onglet « Développeur », cochez « Autoriser JavaScript depuis les Apple Events » ; ou, sur les "
+           "anciennes versions, menu Développement > « Autoriser JavaScript depuis les Apple Events ». "
+           "Cliquez ensuite à nouveau sur « Rafraîchir ».")
+
+
 def osa(lines, *args, timeout=40):
     cmd = ["/usr/bin/osascript"]
     for ln in lines:
@@ -400,15 +407,13 @@ def osa(lines, *args, timeout=40):
     if r.returncode != 0:
         err = r.stderr.decode("utf-8", "replace").strip()
         low = err.lower()
-        if "-1743" in err or "not authorized" in low or "pas autoris" in low:
+        log(f"osascript : {err}")
+        if "-1743" in err or "not authorized" in low or "pas autoris" in low or "n’est pas autoris" in low:
             raise SafariError("macOS n'autorise pas encore l'application à piloter Safari. Ouvrez Réglages Système > "
-                              "Confidentialité et sécurité > Automatisation, autorisez « Safari » pour Python / "
+                              "Confidentialité et sécurité > Automatisation et autorisez « Safari » pour Python / "
                               "Bons Plans Domadoo, puis cliquez à nouveau sur « Rafraîchir ».")
-        if "javascript" in low:
-            raise SafariError("Safari doit autoriser le JavaScript piloté par l'application : dans Safari, menu Réglages > "
-                              "Avancées, cochez « Afficher les fonctionnalités pour les développeurs web », puis dans le "
-                              "menu Développement, cochez « Autoriser JavaScript depuis les Apple Events ». "
-                              "Cliquez ensuite à nouveau sur « Rafraîchir ».")
+        if "apple event" in low and ("allow" in low or "autoris" in low):
+            raise SafariError(JS_HELP)
         raise SafariError(f"Safari n'a pas pu lire la page : {err}")
     return r.stdout.decode("utf-8", "replace").rstrip("\n")
 
@@ -432,7 +437,7 @@ def safari_wait(win, page, limit=75):
         try:
             st = osa(OSA_JS, win, JS_STATE, timeout=20)
         except SafariError as e:
-            if "javascript" in str(e).lower() or "autoris" in str(e).lower():
+            if str(e) == JS_HELP or "Automatisation" in str(e):
                 raise
             continue
         parts = st.split("|", 2)

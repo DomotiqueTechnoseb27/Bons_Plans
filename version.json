@@ -1,8 +1,8 @@
 {
-  "version": "1.1.1",
-  "notes": "Lecture via Safari quand Domadoo bloque la lecture directe",
+  "version": "1.1.2",
+  "notes": "Messages Safari plus précis",
   "files": {
-    "server.py": "cb6ea1604b9df760b0e9b90f34366357378b56c140b3eb40b1486914abbdd8ef",
+    "server.py": "b88432bc1feea813f79f0ebf12119feca0af933c7a9e4ea775854076e165e99a",
     "index.html": "ece28416e592ff6914eac074fa916727606babc1b353e9ea0081a7b68a3c5982"
   }
 }
