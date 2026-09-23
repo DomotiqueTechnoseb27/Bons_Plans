@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bons Plans Domadoo – Technoseb27</title>
+<style>
+:root{--ink:#14303d;--text:#2b3a44;--muted:#5a6b78;--line:#d6dde3;--bg:#eef3f6;--card:#fff;--teal:#0f6e8c;--teal-d:#0b5870;--promo:#e8491d;--ok:#2e7d4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif}
+header{background:var(--ink);color:#fff;padding:16px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-.01em}
+header .status{color:#b9ccd6;font-size:13px;flex:1;min-width:200px}
+button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--line);background:#fff;color:var(--ink);padding:8px 14px}
+button:hover{border-color:var(--teal)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #7cc4dc;outline-offset:1px}
+button.primary{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600}
+button.primary:hover{background:var(--teal-d)}
+button.big{padding:10px 20px;font-size:16px}
+button:disabled{opacity:.55;cursor:wait}
+header button.ghost{background:transparent;color:#dbe7ec;border-color:#46626f}
+.controls{background:#fff;border-bottom:1px solid var(--line);padding:12px 24px;display:flex;flex-wrap:wrap;gap:18px;align-items:center}
+.controls label{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink)}
+.controls input[type=number]{width:64px;padding:5px 6px;border:1px solid var(--line);border-radius:5px;font:inherit}
+.controls select{padding:5px 6px;border:1px solid var(--line);border-radius:5px;font:inherit}
+.exports{padding:12px 24px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.exports .sel{color:var(--muted);font-size:14px;margin-right:auto}
+main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--teal);border-radius:6px;padding:14px;display:grid;grid-template-columns:120px 1fr;gap:14px}
+.card.off{opacity:.45;border-left-color:#aab6be}
+.card img{width:120px;height:120px;object-fit:contain;background:#fff}
+.card .meta{font-size:12.5px;color:var(--muted);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.card .meta .stock-limit{color:var(--promo);font-weight:600}
+.card h3{margin:2px 0 6px;font-size:15.5px;line-height:1.3;color:var(--ink)}
+.card textarea{width:100%;min-height:92px;font:inherit;font-size:14px;line-height:1.45;border:1px solid var(--line);border-radius:5px;padding:6px 8px;resize:vertical;color:var(--text)}
+.prices{margin:6px 0;display:flex;align-items:baseline;gap:8px}
+.prices s{color:#8a97a1}
+.prices strong{font-size:20px;color:var(--teal)}
+.pct{background:var(--promo);color:#fff;font-weight:700;font-size:12.5px;padding:2px 7px;border-radius:4px}
+.links{display:grid;grid-template-columns:auto 1fr auto;gap:4px 6px;align-items:center;font-size:12.5px;margin-top:6px}
+.links input{width:100%;font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-radius:4px;padding:3px 5px;color:var(--muted);background:#f7f9fa}
+.links button{padding:2px 8px;font-size:12px}
+.actions{grid-column:1/-1;display:flex;gap:8px;align-items:center;border-top:1px solid #edf1f3;padding-top:8px}
+.actions label{font-size:13.5px;display:flex;gap:6px;align-items:center;margin-right:auto}
+.empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)}
+.empty strong{display:block;font-size:18px;color:var(--ink);margin-bottom:6px}
+.error{grid-column:1/-1;background:#fff3ef;border:1px solid #f2c2b2;color:#8a2c10;padding:14px 16px;border-radius:6px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:6px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+.small{font-size:12.5px;color:var(--muted)}
+.linkbtn{background:none;border:none;color:var(--teal);padding:0;text-decoration:underline;font-size:12.5px}
+@media (max-width:600px){main{grid-template-columns:1fr}.card{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Bons plans Domadoo <span id="ver" style="font-weight:400;font-size:12.5px;color:#9fb6c2"></span></h1>
+  <div class="status" id="status">Prêt. Cliquez sur « Rafraîchir » pour analyser les promotions.</div>
+  <button class="primary big" id="btnRefresh">Rafraîchir</button>
+  <button class="ghost" id="btnQuit" title="Arrêter l'application">Quitter</button>
+</header>
+
+<div id="updBar" style="display:none;background:#e6f4ea;border-bottom:1px solid #b9dcc4;padding:10px 24px;font-size:14px;color:#1d5a36;align-items:center;gap:12px;flex-wrap:wrap">
+  <span id="updMsg" style="flex:1"></span>
+  <button id="btnUpdate" class="primary">Installer et redémarrer</button>
+</div>
+<div class="controls">
+  <label>Produits à proposer <input type="number" id="optCount" min="5" max="80" value="35"></label>
+  <label>Remise minimale <input type="number" id="optMin" min="0" max="90" value="10"> %</label>
+  <label>Max. par marque <input type="number" id="optBrand" min="1" max="50" value="5"></label>
+  <label>Ordre
+    <select id="optOrder">
+      <option value="mix">Varié (priorité aux grosses remises)</option>
+      <option value="discount">Plus grosses remises d'abord</option>
+      <option value="random">Aléatoire</option>
+      <option value="price">Prix croissant</option>
+    </select></label>
+  <label><input type="checkbox" id="optAcc" checked> Exclure câbles, plaques, adaptateurs…</label>
+  <label><input type="checkbox" id="optOrderOnly"> Exclure « Sur commande »</label>
+  <label>Identifiant affilié <input type="number" id="optDomid" value="8" style="width:56px"></label>
+</div>
+
+<div class="exports">
+  <span class="sel" id="selInfo"></span>
+  <button id="btnCopyHtml" class="primary">Copier le HTML pour WordPress</button>
+  <button id="btnPreview">Aperçu / PDF</button>
+  <button id="btnCsv">Exporter CSV</button>
+  <button id="btnPhp">Snippet Content Egg</button>
+</div>
+
+<main id="list">
+  <div class="empty"><strong>Aucune sélection pour l'instant</strong>Cliquez sur « Rafraîchir » : l'application lit la page Promotions de Domadoo et vous propose une sélection prête à publier.</div>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+let ALL = [], CURRENT = [];
+const SEEN = new Set(JSON.parse(localStorage.getItem("bpd_seen") || "[]"));
+const saveSeen = () => localStorage.setItem("bpd_seen", JSON.stringify([...SEEN].slice(-3000)));
+const ACC_RE = /c[âa]ble|plaque de finition|adaptateur|badge rfid|bouton avec guide|cadre de|support mural|antenne|connecteur|pile |piles |vis |fixation/i;
+
+/* ---------- options mémorisées ---------- */
+const OPTS = ["optCount","optMin","optBrand","optOrder","optAcc","optOrderOnly","optDomid"];
+function loadOpts(){ const o = JSON.parse(localStorage.getItem("bpd_opts")||"{}");
+  OPTS.forEach(id=>{ if(o[id]===undefined) return; const el=$("#"+id); el.type==="checkbox"?el.checked=o[id]:el.value=o[id]; }); }
+function saveOpts(){ const o={}; OPTS.forEach(id=>{const el=$("#"+id); o[id]=el.type==="checkbox"?el.checked:el.value;}); localStorage.setItem("bpd_opts",JSON.stringify(o)); }
+loadOpts(); OPTS.forEach(id=>$("#"+id).addEventListener("change",()=>{saveOpts(); if(ALL.length){select(false);}}));
+
+/* ---------- utilitaires ---------- */
+const eur = n => n.toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc = s => String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+function hash(s){let h=2166136261;for(const c of String(s)){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),2200);}
+function affLink(url){ const id=String($("#optDomid").value||"8").trim();
+  let u=url.replace(/([?&])domid=[^&]*&?/,"$1").replace(/[?&]$/,""); return u+(u.includes("?")?"&":"?")+"domid="+id; }
+const imgOf = p => p.img_large || p.img;
+const today = () => new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"});
+
+/* ---------- texte de promotion ---------- */
+function promoText(p){
+  const h = hash(p.id), save = eur(p.old - p.price);
+  const name = p.title.replace(/^[A-Z0-9ÉÈ .&'-]{2,}\s[-–]\s/,"").trim() || p.title;
+  const openers = p.pct>=50 ? ["Remise exceptionnelle !","Prix cassé !","Grosse baisse de prix !"]
+               : p.pct>=25 ? ["Bon plan !","Belle remise !","Prix en baisse !"]
+               : ["Petite remise bienvenue.","Prix doux en ce moment.","Un coup de pouce sur le prix."];
+  let t = `${openers[h%openers.length]} ${name} : ${eur(p.price)} € au lieu de ${eur(p.old)} €, soit ${save} € d'économie (-${p.pct} %).`;
+  if (p.desc) t += " " + p.desc.replace(/\s*$/,"").replace(/([^.!?])$/,"$1.");
+  if (/Derniers articles/i.test(p.stock)) t += " Stock limité : les derniers exemplaires partent vite.";
+  else if (/Sur commande/i.test(p.stock)) t += " Produit disponible sur commande, prévoyez un délai de livraison.";
+  else if (/Réapprovisionnement/i.test(p.stock)) t += " Produit en cours de réapprovisionnement.";
+  return t;
+}
+
+/* ---------- sélection ---------- */
+function eligible(){
+  const min=+$("#optMin").value||0, acc=$("#optAcc").checked, noOrder=$("#optOrderOnly").checked;
+  return ALL.filter(p=>p.pct>=min && !(acc && ACC_RE.test(p.title)) && !(noOrder && /Sur commande/i.test(p.stock)) && !/Rupture|Épuisé/i.test(p.stock));
+}
+function order(list){
+  const o=$("#optOrder").value;
+  if(o==="discount") return list.sort((a,b)=>b.pct-a.pct);
+  if(o==="price") return list.sort((a,b)=>a.price-b.price);
+  if(o==="random") return shuffle(list);
+  return list.map(p=>({p,k:Math.random()*(0.5+p.pct/100)})).sort((a,b)=>b.k-a.k).map(x=>x.p);
+}
+function pick(pool, count, maxBrand, taken){
+  const out=[], perBrand={};
+  taken.forEach(p=>perBrand[p.brand]=(perBrand[p.brand]||0)+1);
+  for(const p of pool){ if(out.length>=count) break;
+    if(taken.some(t=>t.id===p.id) || out.includes(p)) continue;
+    if((perBrand[p.brand]||0)>=maxBrand) continue;
+    perBrand[p.brand]=(perBrand[p.brand]||0)+1; out.push(p); }
+  return out;
+}
+function select(fresh){
+  const count=+$("#optCount").value||35, maxBrand=+$("#optBrand").value||5;
+  let pool=order(eligible());
+  let chosen;
+  if(fresh){
+    const unseen=pool.filter(p=>!SEEN.has(p.id)), seen=pool.filter(p=>SEEN.has(p.id));
+    chosen=pick(unseen,count,maxBrand,[]);
+    if(chosen.length<count) chosen=chosen.concat(pick(seen,count-chosen.length,maxBrand,chosen));
+  } else {
+    const keep=CURRENT.filter(p=>pool.includes(p)).slice(0,count);
+    chosen=keep.concat(pick(pool,count-keep.length,maxBrand,keep));
+  }
+  const o=$("#optOrder").value;
+  if(o==="discount") chosen.sort((a,b)=>b.pct-a.pct);
+  if(o==="price") chosen.sort((a,b)=>a.price-b.price);
+  CURRENT=chosen.map(p=>{ const prev=CURRENT.find(c=>c.id===p.id); return prev||Object.assign({},p,{text:promoText(p),on:true}); });
+  CURRENT.forEach(p=>SEEN.add(p.id)); saveSeen();
+  render();
+}
+function replaceOne(idx){
+  const maxBrand=+$("#optBrand").value||5;
+  const others=CURRENT.filter((_,i)=>i!==idx);
+  let pool=order(eligible()).filter(p=>!others.some(o=>o.id===p.id) && p.id!==CURRENT[idx].id);
+  const unseen=pool.filter(p=>!SEEN.has(p.id));
+  const cand=pick(unseen.length?unseen:pool,1,maxBrand,others)[0] || pick(pool,1,999,others)[0];
+  if(!cand){toast("Plus aucun autre produit disponible avec ces filtres.");return;}
+  SEEN.add(cand.id); saveSeen();
+  CURRENT[idx]=Object.assign({},cand,{text:promoText(cand),on:true}); render();
+}
+
+/* ---------- affichage ---------- */
+function render(){
+  const list=$("#list");
+  if(!CURRENT.length){ list.innerHTML=`<div class="empty"><strong>Aucun produit ne correspond aux filtres</strong>Baissez la remise minimale ou décochez une exclusion.</div>`; updateSel(); return; }
+  list.innerHTML=CURRENT.map((p,i)=>`
+  <article class="card ${p.on?"":"off"}" data-i="${i}">
+    <a href="${esc(affLink(p.url))}" target="_blank" rel="noopener"><img src="${esc(imgOf(p))}" alt="" referrerpolicy="no-referrer" loading="lazy"></a>
+    <div>
+      <div class="meta"><span>${esc(p.brand)}</span>${p.stock?`<span class="${/Derniers/i.test(p.stock)?"stock-limit":""}">${esc(p.stock)}</span>`:""}</div>
+      <h3>${esc(p.title)}</h3>
+      <div class="prices"><s>${eur(p.old)} €</s><strong>${eur(p.price)} €</strong><span class="pct">-${p.pct} %</span></div>
+      <textarea data-i="${i}" aria-label="Texte de promotion">${esc(p.text)}</textarea>
+      <div class="links">
+        <span>Lien</span><input readonly value="${esc(affLink(p.url))}"><button data-copy="link" data-i="${i}">Copier</button>
+        <span>Photo</span><input readonly value="${esc(imgOf(p))}"><button data-copy="img" data-i="${i}">Copier</button>
+      </div>
+    </div>
+    <div class="actions">
+      <label><input type="checkbox" data-on="${i}" ${p.on?"checked":""}> Inclure dans l'article</label>
+      <button class="linkbtn" data-regen="${i}">Autre formulation</button>
+      <button data-replace="${i}">Remplacer ce produit</button>
+    </div>
+  </article>`).join("");
+  updateSel();
+}
+function updateSel(){ const n=CURRENT.filter(p=>p.on).length; $("#selInfo").textContent = CURRENT.length?`${n} produit(s) retenu(s) sur ${CURRENT.length} proposés · ${eligible().length} promos correspondent aux filtres`:""; }
+
+$("#list").addEventListener("input",e=>{ if(e.target.matches("textarea")) CURRENT[+e.target.dataset.i].text=e.target.value; });
+$("#list").addEventListener("change",e=>{ const i=e.target.dataset.on; if(i!==undefined){CURRENT[+i].on=e.target.checked; e.target.closest(".card").classList.toggle("off",!e.target.checked); updateSel();} });
+$("#list").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  if(b.dataset.copy){ const p=CURRENT[+b.dataset.i]; copy(b.dataset.copy==="link"?affLink(p.url):imgOf(p)); }
+  if(b.dataset.replace!==undefined) replaceOne(+b.dataset.replace);
+  if(b.dataset.regen!==undefined){ const i=+b.dataset.regen, p=CURRENT[i]; p._v=(p._v||0)+1; p.text=promoText(Object.assign({},p,{id:p.id+"#"+p._v})); render(); }
+});
+
+/* ---------- analyse ---------- */
+async function refresh(force){
+  const btn=$("#btnRefresh"); btn.disabled=true; btn.textContent="Analyse en cours…";
+  $("#status").textContent="Lecture des pages Promotions de Domadoo (quelques secondes)…";
+  try{
+    const r=await fetch("/api/scan"+(force?"?force=1":"")); const d=await r.json();
+    if(!d.ok) throw new Error(d.error||"Erreur inconnue");
+    ALL=d.products;
+    const max=Math.max(...ALL.map(p=>p.pct));
+    $("#status").textContent=`${ALL.length} produits en promotion trouvés (jusqu'à -${max} %) · analyse du ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}`;
+    select(true);
+  }catch(err){
+    $("#status").textContent="L'analyse a échoué.";
+    $("#list").innerHTML=`<div class="error"><strong>Impossible de lire les promotions.</strong><br>${esc(err.message)}<br><br>Vérifiez votre connexion Internet puis réessayez. Si le problème persiste, le site de Domadoo a peut-être changé de présentation : le journal se trouve dans ~/Library/Logs/BonsPlansDomadoo.</div>`;
+  }finally{ btn.disabled=false; btn.textContent="Rafraîchir"; }
+}
+$("#btnRefresh").addEventListener("click",e=>refresh(e.altKey));
+
+/* ---------- exports ---------- */
+const chosen=()=>CURRENT.filter(p=>p.on);
+function need(){ if(!chosen().length){toast("Aucun produit sélectionné.");return false;} return true; }
+async function copy(txt){ try{await navigator.clipboard.writeText(txt);toast("Copié dans le presse-papiers");}catch{ const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();toast("Copié dans le presse-papiers"); } }
+function download(name,content,type){ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
+const stamp=()=>new Date().toISOString().slice(0,10);
+
+function articleHtml(){
+  const items=chosen(), max=Math.max(...items.map(p=>p.pct));
+  const cards=items.map(p=>{ const l=esc(affLink(p.url)); return `
+<div class="tsd-card" style="display:flex;gap:18px;align-items:flex-start;border:1px solid #d6dde3;border-left:5px solid #0f6e8c;border-radius:6px;padding:16px;margin:0 0 18px;background:#fff;">
+  <a href="${l}" target="_blank" rel="sponsored noopener" style="flex:0 0 150px;"><img src="${esc(imgOf(p))}" alt="${esc(p.title)}" width="150" height="150" loading="lazy" style="width:150px;height:150px;object-fit:contain;display:block;"></a>
+  <div style="flex:1;min-width:0;">
+    <h3 style="margin:0 0 8px;font-size:18px;line-height:1.3;color:#14303d;">${esc(p.title)}</h3>
+    <p style="margin:0 0 10px;font-size:15px;line-height:1.55;color:#2b3a44;">${esc(p.text)}</p>
+    <p style="margin:0 0 12px;"><span style="text-decoration:line-through;color:#8a97a1;font-size:15px;">${eur(p.old)} €</span> <strong style="font-size:22px;color:#0f6e8c;margin-left:8px;">${eur(p.price)} €</strong> <span style="background:#e8491d;color:#fff;font-weight:700;font-size:13px;padding:3px 8px;border-radius:4px;margin-left:8px;">-${p.pct} %</span></p>
+    <a href="${l}" target="_blank" rel="sponsored noopener" style="display:inline-block;background:#0f6e8c;color:#fff;text-decoration:none;font-weight:600;padding:9px 16px;border-radius:5px;">Voir l'offre sur Domadoo</a>
+  </div>
+</div>`;}).join("");
+  return `<!-- ===== Début du bloc Bons plans Domadoo ===== -->
+<div class="tsd-promos" style="max-width:820px;margin:0 auto;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<h2 style="font-size:26px;color:#14303d;margin:0 0 12px;">Bons plans domotique : ${items.length} produits en promotion chez Domadoo</h2>
+<p style="font-size:16px;line-height:1.6;color:#2b3a44;">Domadoo, la boutique française spécialisée en domotique, propose en ce moment de nombreuses promotions. J'ai sélectionné pour vous ${items.length} offres intéressantes pour une maison connectée, avec des remises allant jusqu'à -${max} %.</p>
+<p style="font-size:16px;line-height:1.6;color:#2b3a44;">Les stocks sont parfois limités et les prix peuvent évoluer à tout moment : ne tardez pas si un produit vous intéresse.</p>
+<p style="font-size:13px;line-height:1.5;color:#5a6b78;background:#f1f5f7;padding:10px 12px;border-radius:5px;margin:0 0 22px;">Les liens de cet article sont des liens affiliés : si vous passez commande via ces liens, Domotique Technoseb27 perçoit une petite commission, sans aucun surcoût pour vous. Merci pour votre soutien ! Prix relevés le ${today()}.</p>
+${cards}
+<p style="font-size:16px;line-height:1.6;color:#2b3a44;margin-top:24px;">Vous avez repéré une autre bonne affaire ou vous hésitez entre deux produits ? Dites-le-moi en commentaire, je vous aiderai à choisir celui qui s'intégrera le mieux à votre installation Home Assistant.</p>
+</div>
+<style>@media (max-width:600px){.tsd-card{flex-direction:column;}}</style>
+<!-- ===== Fin du bloc ===== -->`;
+}
+$("#btnCopyHtml").addEventListener("click",()=>{ if(need()) copy(articleHtml()); });
+$("#btnPreview").addEventListener("click",()=>{ if(!need()) return;
+  const w=window.open("","_blank"); if(!w){toast("Autorisez l'ouverture de fenêtres pour l'aperçu.");return;}
+  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Bons plans Domadoo – ${today()}</title>
+  <style>body{background:#f4f7f9;padding:24px 12px;margin:0}.bar{max-width:820px;margin:0 auto 16px;display:flex;gap:10px;justify-content:flex-end}
+  .bar button{font:15px -apple-system,sans-serif;padding:9px 16px;border-radius:6px;border:0;background:#0f6e8c;color:#fff;cursor:pointer}
+  @media print{.bar{display:none}body{background:#fff;padding:0}.tsd-card{break-inside:avoid}}</style></head>
+  <body><div class="bar"><button onclick="window.print()">Enregistrer en PDF</button></div>${articleHtml()}</body></html>`);
+  w.document.close(); });
+$("#btnCsv").addEventListener("click",()=>{ if(!need()) return;
+  const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  const rows=[["Titre","Marque","Prix","Ancien prix","Remise","Stock","Lien affilié","Lien photo","Texte"]]
+    .concat(chosen().map(p=>[p.title,p.brand,eur(p.price),eur(p.old),"-"+p.pct+" %",p.stock,affLink(p.url),imgOf(p),p.text]));
+  download(`bons-plans-domadoo-${stamp()}.csv`,"\ufeff"+rows.map(r=>r.map(q).join(";")).join("\r\n"),"text/csv;charset=utf-8"); });
+$("#btnPhp").addEventListener("click",()=>{ if(!need()) return;
+  const s=v=>"'"+String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";
+  const items=chosen().map(p=>`        [
+            'unique_id'    => ${s("domadoo-"+p.id)},
+            'title'        => ${s(p.title)},
+            'description'  => ${s(p.text)},
+            'img'          => ${s(imgOf(p))},
+            'url'          => ${s(affLink(p.url))},
+            'orig_url'     => ${s(p.url)},
+            'domain'       => 'domadoo.fr',
+            'price'        => ${p.price},
+            'priceOld'     => ${p.old},
+            'currencyCode' => 'EUR',
+            'merchant'     => 'Domadoo',
+            'badge'        => ${s("-"+p.pct+"%")},
+            'badge_color'  => 'danger',
+            'stock_status' => 1,
+        ],`).join("\n");
+  const php=`<?php
+/**
+ * Import ponctuel de ${chosen().length} offres Domadoo dans le module OFFER de Content Egg Pro.
+ * Généré par « Bons Plans Domadoo » le ${today()}.
+ * 1. Renseignez l'ID de l'article ci-dessous. 2. Collez ce code dans Code Snippets (sans la ligne <?php),
+ *    exécution « Administration uniquement ». 3. Ouvrez /wp-admin/?tsd_import_domadoo=1 4. Supprimez le snippet.
+ * Attention : remplace les offres du module Offer déjà présentes dans l'article.
+ */
+define( 'TSD_DOMADOO_POST_ID', 0 ); // <-- ID de l'article
+
+add_action( 'admin_init', function () {
+    if ( empty( $_GET['tsd_import_domadoo'] ) || ! current_user_can( 'manage_options' ) ) { return; }
+    if ( ! TSD_DOMADOO_POST_ID || ! get_post( TSD_DOMADOO_POST_ID ) ) { wp_die( 'Renseignez un ID d\\'article valide.' ); }
+    if ( ! class_exists( 'ContentEgg\\\\application\\\\components\\\\ContentManager' ) ) { wp_die( 'Content Egg Pro n\\'est pas actif.' ); }
+    $products = [
+${items}
+    ];
+    \\ContentEgg\\application\\components\\ContentManager::saveData( $products, 'Offer', TSD_DOMADOO_POST_ID );
+    wp_die( count( $products ) . ' offres importées. Pensez à supprimer ce snippet.', 'Import terminé', [ 'response' => 200 ] );
+} );
+`;
+  download(`import-domadoo-content-egg-${stamp()}.php`,php,"text/plain;charset=utf-8"); });
+
+/* ---------- mises à jour ---------- */
+async function checkUpdate(manual){
+  try{
+    const v=await (await fetch("/api/version")).json(); $("#ver").textContent="v"+v.version;
+    const c=await (await fetch("/api/update-check")).json();
+    if(c.ok && c.available){
+      $("#updMsg").textContent=`Nouvelle version ${c.remote} disponible${c.notes?" : "+c.notes:""}`;
+      $("#updBar").style.display="flex";
+    } else if(manual){ toast(c.ok?"Vous avez la dernière version.":"Vérification impossible : "+(c.error||"")); }
+  }catch{}
+}
+$("#ver").addEventListener("click",()=>checkUpdate(true)); $("#ver").style.cursor="pointer"; $("#ver").title="Vérifier les mises à jour";
+$("#btnUpdate").addEventListener("click",async()=>{
+  const b=$("#btnUpdate"); b.disabled=true; b.textContent="Installation…";
+  try{
+    const r=await (await fetch("/api/update-install")).json();
+    if(!r.installed){ b.disabled=false; b.textContent="Installer et redémarrer"; toast(r.error?"Échec : "+r.error:"Rien à installer."); return; }
+    $("#updMsg").textContent="Mise à jour installée, redémarrage…";
+    const old=r.local;
+    for(let i=0;i<40;i++){ await new Promise(ok=>setTimeout(ok,1000));
+      try{ const v=await (await fetch("/api/version")).json(); if(v.version!==old){ location.reload(); return; } }catch{} }
+    $("#updMsg").textContent="Redémarrage plus long que prévu : relancez l'application.";
+  }catch(e){ b.disabled=false; b.textContent="Installer et redémarrer"; toast("Échec de la mise à jour."); }
+});
+checkUpdate(false);
+
+/* ---------- vie de l'application ---------- */
+$("#btnQuit").addEventListener("click",async()=>{ try{await fetch("/api/quit");}catch{} document.body.innerHTML='<div class="empty" style="padding:80px"><strong>Application arrêtée</strong>Vous pouvez fermer cet onglet.</div>'; });
+setInterval(()=>fetch("/api/ping").catch(()=>{}),60000);
+</script>
+</body>
+</html>
