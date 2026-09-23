@@ -317,8 +317,8 @@ def parse_generic(text):
     return list(found.values())
 
 
-ANTIBOT = ("cf-browser-verification", "challenge-platform", "just a moment", "attention required",
-           "captcha", "access denied", "datadome", "pardon our interruption", "request unsuccessful")
+ANTIBOT = ("cf-browser-verification", "challenge-platform", "cf-chl-", "just a moment...", "attention required! | cloudflare",
+           "datadome", "px-captcha", "pardon our interruption", "request unsuccessful", "access denied</title>")
 
 
 def looks_blocked(text):
@@ -334,7 +334,7 @@ def html_page_count(text, per_page):
 
 
 # ---------------------------------------------------------------- analyse complète
-def scan():
+def scan_direct():
     products, seen_ids = [], set()
     mode, pages = None, None
     n = 1
@@ -384,6 +384,118 @@ def scan():
     log(f"Analyse terminée : {len(products)} produits, {n} page(s), mode {mode}")
     return {"ok": True, "products": products, "pages": n, "mode": mode,
             "scanned_at": datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+
+# ---------------------------------------------------------------- lecture via Safari (secours anti-robots)
+class SafariError(RuntimeError):
+    pass
+
+
+def osa(lines, *args, timeout=40):
+    cmd = ["/usr/bin/osascript"]
+    for ln in lines:
+        cmd += ["-e", ln]
+    cmd += list(args)
+    r = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    if r.returncode != 0:
+        err = r.stderr.decode("utf-8", "replace").strip()
+        low = err.lower()
+        if "-1743" in err or "not authorized" in low or "pas autoris" in low:
+            raise SafariError("macOS n'autorise pas encore l'application à piloter Safari. Ouvrez Réglages Système > "
+                              "Confidentialité et sécurité > Automatisation, autorisez « Safari » pour Python / "
+                              "Bons Plans Domadoo, puis cliquez à nouveau sur « Rafraîchir ».")
+        if "javascript" in low:
+            raise SafariError("Safari doit autoriser le JavaScript piloté par l'application : dans Safari, menu Réglages > "
+                              "Avancées, cochez « Afficher les fonctionnalités pour les développeurs web », puis dans le "
+                              "menu Développement, cochez « Autoriser JavaScript depuis les Apple Events ». "
+                              "Cliquez ensuite à nouveau sur « Rafraîchir ».")
+        raise SafariError(f"Safari n'a pas pu lire la page : {err}")
+    return r.stdout.decode("utf-8", "replace").rstrip("\n")
+
+
+OSA_OPEN = ['on run argv', 'tell application "Safari"', 'make new document with properties {URL:(item 1 of argv)}',
+            'return id of front window', 'end tell', 'end run']
+OSA_NAV = ['on run argv', 'tell application "Safari" to set URL of current tab of window id ((item 1 of argv) as integer) to (item 2 of argv)', 'end run']
+OSA_JS = ['on run argv', 'tell application "Safari" to return do JavaScript (item 2 of argv) in current tab of window id ((item 1 of argv) as integer)', 'end run']
+OSA_CLOSE = ['on run argv', 'tell application "Safari" to close window id ((item 1 of argv) as integer)', 'end run']
+
+JS_STATE = "document.readyState + '|' + document.querySelectorAll('a[href*=\".html\"]').length + '|' + location.href"
+JS_HTML = ("(function(){var h=document.documentElement.outerHTML;"
+           "return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'').replace(/<style[\\s\\S]*?<\\/style>/gi,'')"
+           ".replace(/<svg[\\s\\S]*?<\\/svg>/gi,'');})()")
+
+
+def safari_wait(win, page, limit=75):
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        time.sleep(1.2)
+        try:
+            st = osa(OSA_JS, win, JS_STATE, timeout=20)
+        except SafariError as e:
+            if "javascript" in str(e).lower() or "autoris" in str(e).lower():
+                raise
+            continue
+        parts = st.split("|", 2)
+        if len(parts) == 3 and parts[0] == "complete" and int(parts[1] or 0) > 8 and \
+                (page == 1 or f"page={page}" in parts[2]):
+            return True
+    return False
+
+
+def scan_safari():
+    products, seen_ids, pages = [], set(), None
+    win = osa(OSA_OPEN, f"{BASE}{LIST_PATH}?page=1")
+    try:
+        n = 1
+        while n <= MAX_PAGES:
+            if n > 1:
+                osa(OSA_NAV, win, f"{BASE}{LIST_PATH}?page={n}")
+            if not safari_wait(win, n):
+                if n == 1:
+                    raise SafariError("La page Promotions ne s'est pas chargée dans Safari (plus d'une minute). "
+                                      "Si Domadoo affiche une vérification, validez-la dans la fenêtre Safari puis réessayez.")
+                break
+            txt = osa(OSA_JS, win, JS_HTML, timeout=60)
+            items = parse_html(txt) or parse_generic(txt)
+            if n == 1 and not items:
+                save_debug("derniere-page.html", txt)
+                raise SafariError("Safari a bien ouvert la page, mais aucun produit n'a été reconnu. "
+                                  f"La page a été enregistrée dans {LOG_DIR}/derniere-page.html")
+            pages = pages or html_page_count(txt, len(items))
+            new = [p for p in items if p["id"] not in seen_ids]
+            if not new:
+                break
+            for p in new:
+                seen_ids.add(p["id"])
+            products.extend(new)
+            if pages and n >= pages:
+                break
+            n += 1
+    finally:
+        try:
+            osa(OSA_CLOSE, win, timeout=10)
+        except Exception:  # noqa
+            pass
+    log(f"Analyse via Safari terminée : {len(products)} produits, {n} page(s)")
+    return {"ok": True, "products": products, "pages": n, "mode": "safari",
+            "scanned_at": datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+
+_prefer_safari = False
+
+
+def scan():
+    global _prefer_safari
+    if not _prefer_safari:
+        try:
+            return scan_direct()
+        except RuntimeError as e:
+            if sys.platform != "darwin":
+                raise
+            log(f"Lecture directe impossible ({e}) : passage par Safari")
+    res = scan_safari()
+    _prefer_safari = True
+    return res
 
 
 def get_scan(force=False):

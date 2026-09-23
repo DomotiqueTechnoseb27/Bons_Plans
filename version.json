@@ -1,8 +1,8 @@
 {
-  "version": "1.1.0",
-  "notes": "Version initiale avec mises à jour automatiques",
+  "version": "1.1.1",
+  "notes": "Lecture via Safari quand Domadoo bloque la lecture directe",
   "files": {
-    "server.py": "7c888265733b424d73f6a1039aa18b9b9b5af8706d40ccd7ff2d8da218fd84e8",
-    "index.html": "2d1b98444bd32c4bb3c6442fd27c98d9cf6827f8a9afa789c0aef0836099f01c"
+    "server.py": "cb6ea1604b9df760b0e9b90f34366357378b56c140b3eb40b1486914abbdd8ef",
+    "index.html": "ece28416e592ff6914eac074fa916727606babc1b353e9ea0081a7b68a3c5982"
   }
 }

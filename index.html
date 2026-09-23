@@ -225,17 +225,17 @@ $("#list").addEventListener("click",e=>{
 /* ---------- analyse ---------- */
 async function refresh(force){
   const btn=$("#btnRefresh"); btn.disabled=true; btn.textContent="Analyse en cours…";
-  $("#status").textContent="Lecture des pages Promotions de Domadoo (quelques secondes)…";
+  $("#status").textContent="Lecture des promotions… Si Domadoo bloque la lecture directe, une fenêtre Safari s'ouvre quelques secondes : ne la fermez pas.";
   try{
     const r=await fetch("/api/scan"+(force?"?force=1":"")); const d=await r.json();
     if(!d.ok) throw new Error(d.error||"Erreur inconnue");
     ALL=d.products;
     const max=Math.max(...ALL.map(p=>p.pct));
-    $("#status").textContent=`${ALL.length} produits en promotion trouvés (jusqu'à -${max} %) · analyse du ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}`;
+    $("#status").textContent=`${ALL.length} produits en promotion trouvés (jusqu'à -${max} %) · analyse du ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}${d.mode==="safari"?" · lu via Safari":""}`;
     select(true);
   }catch(err){
     $("#status").textContent="L'analyse a échoué.";
-    $("#list").innerHTML=`<div class="error"><strong>Impossible de lire les promotions.</strong><br>${esc(err.message)}<br><br>Vérifiez votre connexion Internet puis réessayez. Si le problème persiste, le site de Domadoo a peut-être changé de présentation : le journal se trouve dans ~/Library/Logs/BonsPlansDomadoo.</div>`;
+    $("#list").innerHTML=`<div class="error"><strong>Impossible de lire les promotions.</strong><br>${esc(err.message)}<br><br>Le journal se trouve dans ~/Library/Logs/BonsPlansDomadoo.</div>`;
   }finally{ btn.disabled=false; btn.textContent="Rafraîchir"; }
 }
 $("#btnRefresh").addEventListener("click",e=>refresh(e.altKey));
