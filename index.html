@@ -256,7 +256,7 @@ function render(){
   if(!CURRENT.length){ list.innerHTML=`<div class="empty"><strong>Aucun produit ne correspond aux filtres</strong>Baissez la remise minimale ou décochez une exclusion.</div>`; updateSel(); return; }
   list.innerHTML=CURRENT.map((p,i)=>`
   <article class="card ${p.on?"":"off"}" data-i="${i}">
-    <a href="${esc(affLink(p))}" target="_blank" rel="noopener">${imgOf(p)?`<img src="${esc(imgOf(p))}" alt="" referrerpolicy="no-referrer" loading="lazy">`:`<div class="small" style="width:120px;height:120px;display:flex;align-items:center;justify-content:center;text-align:center;background:#f3f6f8;border-radius:4px">Photo : configurez l'API Amazon</div>`}</a>
+    <a href="${esc(affLink(p))}" target="_blank" rel="noopener">${imgOf(p)?`<img src="${esc(imgOf(p))}" alt="" referrerpolicy="no-referrer" loading="lazy">`:`<div class="small" style="width:120px;height:120px;display:flex;align-items:center;justify-content:center;text-align:center;background:#f3f6f8;border-radius:4px;padding:6px">${photoHint()}</div>`}</a>
     <div>
       <div class="meta"><span>${esc(p.brand)}</span>${isAmz(p)?`<a href="${esc(p.url)}" target="_blank" rel="noopener" class="small">voir le deal Dealabs</a>`:""}${p.stock?`<span class="${/Derniers/i.test(p.stock)?"stock-limit":""}">${esc(p.stock)}</span>`:""}</div>
       <h3>${esc(p.title)}</h3>
@@ -296,8 +296,9 @@ async function refresh(force){
     ALL=d.products.map(p=>Object.assign({source:"domadoo"},p));
     const max=Math.max(0,...ALL.map(p=>p.pct));
     if(SOURCE==="amazon"){
+      API_STATE = d.api || "";
       const gone=ALL.filter(p=>p.gone).length;
-      const apiTxt = !d.api ? " · photos : API Amazon non configurée" : d.api.startsWith("erreur") ? " · API Amazon : "+d.api.slice(7) : ` · photos et prix officiels Amazon${gone?`, ${gone} deal(s) terminé(s)`:""}`;
+      const apiTxt = !d.api ? " · photos : API Amazon non configurée" : /NotEligible/i.test(d.api) ? " · API Amazon : compte pas encore éligible (photos et prix officiels indisponibles pour l'instant)" : d.api.startsWith("erreur") ? " · API Amazon : "+d.api.slice(7) : ` · photos et prix officiels Amazon${gone?`, ${gone} deal(s) terminé(s)`:""}`;
       $("#status").textContent=`${ALL.length} deals Amazon trouvés sur Dealabs${d.missing?` (${d.missing} sans lien Amazon identifiable, ignorés)`:""}${apiTxt} · ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}`;
       select(true); return;
     }
@@ -415,6 +416,13 @@ document.querySelectorAll(".srcsw button").forEach(b=>b.addEventListener("click"
 setSource(SOURCE, true);
 
 /* ---------- identifiants Creators API ---------- */
+let API_STATE = "";
+function photoHint(){
+  if(!API_STATE) return "Photo : configurez l'API Amazon";
+  if(/NotEligible/i.test(API_STATE)) return "Photo disponible quand votre compte sera éligible à l'API";
+  if(API_STATE.startsWith("erreur")) return "Photo indisponible (erreur API)";
+  return "Photo non fournie par Amazon";
+}
 async function amzState(){
   try{ const c=await (await fetch("/api/amazon-config")).json();
     $("#amzState").textContent = c.configured ? `connectée (v${c.version}) ✓` : "à configurer"; return c; }catch{ return {}; }

@@ -1,8 +1,8 @@
 {
-  "version": "1.4.0",
-  "notes": "Photos et prix officiels Amazon via la Creators API",
+  "version": "1.4.1",
+  "notes": "Correction des liens Amazon introuvables, marques mieux détectées",
   "files": {
-    "server.py": "dfb29b1811d4b4ef6cb5c02a352ca375b78d478d63d38359101eeab94c62ffd7",
-    "index.html": "f292f89b7e2bf29c19c5ebd5dc6ca6f30b34e2b23990eb4c06a78450497e1a66"
+    "server.py": "c845487b9fa0fe74ecf3062c93ded0f31999ec2915ae6ef79b5933827506f5ff",
+    "index.html": "0280201d07fd412fe5626b32085d9561b80ecb986c5a8c0b861f7c03d05aee89"
   }
 }

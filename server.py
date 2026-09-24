@@ -736,6 +736,9 @@ def find_asin(text):
     return m.group(1).upper() if m else None
 
 
+_asin_debug = []
+
+
 def resolve_asin(deal):
     asin = find_asin(deal.get("_desc", ""))
     if asin:
@@ -744,13 +747,20 @@ def resolve_asin(deal):
         asin = find_asin(follow(html.unescape(link)))
         if asin:
             return asin
+    traces = []
     for kind in ("threadmain", "thread"):
+        url = f"https://www.dealabs.com/visit/{kind}/{deal['id'].replace('amz-', '')}"
         try:
-            asin = find_asin(follow(f"https://www.dealabs.com/visit/{kind}/{deal['id']}"))
-        except Exception:  # noqa
-            asin = None
+            out = follow(url)
+        except Exception as e:  # noqa
+            out = f"erreur : {e}"
+        asin = find_asin(out)
         if asin:
             return asin
+        traces.append(f"--- {url}\n{out[-1500:]}")
+    if len(_asin_debug) < 6:
+        _asin_debug.append(f"=== {deal.get('title', '')}\n{deal['url']}\n" + "\n".join(traces))
+        save_debug("asin-introuvables.txt", "\n\n".join(_asin_debug))
     return None
 
 
@@ -761,11 +771,29 @@ sans de du la le les et un une des pour avec x2 x3 x4 nouveau nouvelle mini micr
 barre son détecteur detecteur interrupteur module hub passerelle tondeuse drone appareil photo moniteur cle clé usb""".split())
 
 
+KNOWN_BRANDS = """Aqara Sonoff Philips Hue Xiaomi Samsung Apple Google Nest Amazon Echo Ring Blink Eufy Anker Ugreen Baseus Iniu
+TP-Link Tapo Kasa Netatmo Somfy Legrand Schneider Shelly Meross Tuya Moes Lidl Silvercrest Ikea Nanoleaf Govee Yeelight Lenovo Honor
+Huawei Oppo Realme OnePlus Motorola Nokia Sony Bose JBL Sennheiser Soundcore Marshall Logitech Razer Asus Acer HP Dell MSI Microsoft
+Xbox Nintendo PlayStation Garmin Fitbit Withings Ecovacs Roborock Dreame iRobot Roomba Ezviz Reolink Arlo Imou Wyze SwitchBot Nuki
+Yale Bosch Siemens Fibaro Aeotec Zooz Heatit Sengled Innr Lifx Wiz Elgato Crucial Samsung SanDisk Kingston WD Seagate Netgear Devolo
+AVM Fritz Synology Beelink Raspberry Nothing Fairphone Doogee Ulefone Blackview Oukitel Kindle Kobo Dyson Ninja Tefal Rowenta""".split()
+_BRANDS_LC = {b.lower(): b for b in KNOWN_BRANDS}
+UNIT_WORDS = {"USB", "LED", "TV", "HD", "UHD", "OLED", "QLED", "SSD", "HDMI", "WIFI", "RGB", "GB", "TB", "PC", "EU", "FR",
+              "IP", "PD", "NFC", "GPS", "AMOLED", "LCD", "DDR", "NVME", "PCIE", "USB-C", "II", "III", "IV", "XL", "XXL", "MAX", "PRO"}
+
+
 def guess_brand(title):
-    for w in re.findall(r"[A-ZÀ-Ý][\w&'.-]*", title):
-        if len(w) > 1 and w.lower() not in GENERIC_WORDS and not re.search(r"\d", w):
-            return w.strip(".'-").title()
-    return ""
+    words = re.findall(r"[A-Za-zÀ-ÿ][\w&'-]*", title)
+    for w in words:  # 1. marque connue
+        if w.lower() in _BRANDS_LC:
+            return _BRANDS_LC[w.lower()]
+    for w in words:  # 2. mot entièrement en capitales (INIU, SONOFF…)
+        if len(w) >= 3 and w.isupper() and w not in UNIT_WORDS and not re.search(r"\d", w):
+            return w.title()
+    for w in words[1:]:  # 3. mot capitalisé après le premier (souvent le type de produit)
+        if w[0].isupper() and len(w) > 2 and w.lower() not in GENERIC_WORDS and not re.search(r"\d", w):
+            return w.strip("'-")
+    return words[0].title() if words else ""
 
 
 def rubrique_for(title, group_label):
