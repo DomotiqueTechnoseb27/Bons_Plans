@@ -1,8 +1,8 @@
 {
-  "version": "1.1.2",
-  "notes": "Messages Safari plus précis",
+  "version": "1.2.0",
+  "notes": "Lecture sans Safari (moteur WebKit intégré) et arrêt automatique des anciens exemplaires",
   "files": {
-    "server.py": "b88432bc1feea813f79f0ebf12119feca0af933c7a9e4ea775854076e165e99a",
-    "index.html": "ece28416e592ff6914eac074fa916727606babc1b353e9ea0081a7b68a3c5982"
+    "server.py": "977d4b3555ce870dbfa14e0bb70eadc2fcd60f897b7edcb96acb9398738d8aa1",
+    "index.html": "cf119f2d04741ff702dfecfac47b71aa01c22f95074967e8948eb5a762375876"
   }
 }

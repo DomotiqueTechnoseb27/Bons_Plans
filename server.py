@@ -5,7 +5,7 @@ Bons Plans Domadoo – Domotique Technoseb27
 Petit serveur local : analyse la page Promotions de Domadoo et sert l'interface
 sur http://127.0.0.1:8765. Aucune dépendance : bibliothèque standard + curl de macOS.
 """
-import html, json, math, os, re, shutil, subprocess, sys, threading, time, urllib.request, webbrowser
+import hashlib, html, json, math, os, re, shutil, signal, subprocess, sys, tempfile, threading, time, urllib.request, webbrowser
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -486,21 +486,223 @@ def scan_safari():
             "scanned_at": datetime.now().strftime("%d/%m/%Y %H:%M")}
 
 
-_prefer_safari = False
+# ---------------------------------------------------------------- lecture via le moteur WebKit de macOS (sans Safari)
+SUPPORT_DIR = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "BonsPlansDomadoo")
+WEBFETCH_SWIFT = r"""// webfetch – lecture des pages Promotions de Domadoo avec le moteur WebKit de macOS
+// Usage : webfetch <url_de_base> <dossier_sortie> <pages_max>
+import Cocoa
+import WebKit
+
+@MainActor
+final class Box {
+    var done = false
+    var value: String? = nil
+}
+
+@MainActor
+final class Loader: NSObject, WKNavigationDelegate {
+    let web: WKWebView
+    let window: NSWindow
+
+    override init() {
+        let cfg = WKWebViewConfiguration()
+        cfg.websiteDataStore = WKWebsiteDataStore.default()
+        cfg.applicationNameForUserAgent = "Version/17.5 Safari/605.1.15"
+        web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 900), configuration: cfg)
+        window = NSWindow(contentRect: NSRect(x: -12000, y: -12000, width: 1280, height: 900),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+        super.init()
+        web.navigationDelegate = self
+        window.contentView = web
+        window.orderFrontRegardless()
+    }
+
+    func spin(_ seconds: Double) {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds))
+    }
+
+    func eval(_ js: String, timeout: Double = 25) -> String? {
+        let box = Box()
+        web.evaluateJavaScript(js) { result, _ in
+            if let s = result as? String { box.value = s }
+            box.done = true
+        }
+        let end = Date(timeIntervalSinceNow: timeout)
+        while !box.done && Date() < end { spin(0.05) }
+        return box.value
+    }
+
+    func load(_ urlString: String) {
+        if let url = URL(string: urlString) {
+            web.load(URLRequest(url: url))
+        }
+    }
+}
+
+@main
+struct WebFetch {
+    @MainActor
+    static func main() {
+        let args = CommandLine.arguments
+        guard args.count >= 4 else {
+            print("usage: webfetch <url> <dossier> <pages_max>")
+            exit(64)
+        }
+        let base = args[1]
+        let outDir = args[2]
+        let maxPages = Int(args[3]) ?? 25
+
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.accessory)
+        let loader = Loader()
+
+        let jsState = #"(function(){return document.readyState+'|'+document.querySelectorAll('a[href*=".html"]').length+'|'+location.href+'|'+document.title;})()"#
+        let jsHtml = #"(function(){var h=document.documentElement.outerHTML;return h.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<svg[\s\S]*?<\/svg>/gi,'');})()"#
+
+        var page = 1
+        var saved = 0
+        while page <= maxPages {
+            loader.load("\(base)?page=\(page)")
+            loader.spin(1.0)
+            let deadline = Date(timeIntervalSinceNow: 75)
+            var ready = false
+            while Date() < deadline {
+                loader.spin(0.8)
+                guard let st = loader.eval(jsState, timeout: 10) else { continue }
+                let parts = st.components(separatedBy: "|")
+                if parts.count >= 3, parts[0] == "complete", (Int(parts[1]) ?? 0) > 8,
+                   page == 1 || parts[2].contains("page=\(page)") {
+                    ready = true
+                    break
+                }
+            }
+            if !ready {
+                if page == 1 {
+                    let html = loader.eval(jsHtml, timeout: 30) ?? ""
+                    try? html.write(toFile: "\(outDir)/page1-echec.html", atomically: true, encoding: .utf8)
+                    print("ECHEC page 1")
+                    exit(2)
+                }
+                break
+            }
+            loader.spin(1.0)
+            guard let html = loader.eval(jsHtml, timeout: 40) else { break }
+            try? html.write(toFile: "\(outDir)/page\(page).html", atomically: true, encoding: .utf8)
+            saved += 1
+            print("PAGE \(page) OK")
+            let jsNext = "(function(){return String(Array.prototype.some.call(document.querySelectorAll('a[href]'),function(a){var m=a.href.match(/[?&]page=(\\d+)/);return m&&(+m[1])==\(page + 1);}));})()"
+            if loader.eval(jsNext, timeout: 10) != "true" { break }
+            page += 1
+        }
+        print("TERMINE \(saved)")
+        exit(saved > 0 ? 0 : 2)
+    }
+}
+"""
+
+
+class WebKitError(RuntimeError):
+    pass
+
+
+def find_swiftc():
+    for c in ("/usr/bin/swiftc", "/Library/Developer/CommandLineTools/usr/bin/swiftc"):
+        if os.path.exists(c):
+            return c
+    try:
+        r = subprocess.run(["/usr/bin/xcrun", "--find", "swiftc"], capture_output=True, timeout=20)
+        p = r.stdout.decode().strip()
+        if r.returncode == 0 and p:
+            return p
+    except Exception:  # noqa
+        pass
+    return None
+
+
+def webfetch_binary():
+    digest = hashlib.sha256(WEBFETCH_SWIFT.encode("utf-8")).hexdigest()[:12]
+    bin_path = os.path.join(SUPPORT_DIR, f"webfetch-{digest}")
+    if os.path.exists(bin_path):
+        return bin_path
+    swiftc = find_swiftc()
+    if not swiftc:
+        raise WebKitError("compilateur Swift introuvable")
+    os.makedirs(SUPPORT_DIR, exist_ok=True)
+    src = os.path.join(SUPPORT_DIR, "webfetch.swift")
+    with open(src, "w", encoding="utf-8") as f:
+        f.write(WEBFETCH_SWIFT)
+    log("Préparation du moteur WebKit (première utilisation)…")
+    r = subprocess.run([swiftc, "-O", "-parse-as-library", "-o", bin_path + ".tmp", src],
+                       capture_output=True, timeout=900)
+    if r.returncode != 0:
+        save_debug("compilation-webkit.txt", r.stderr.decode("utf-8", "replace"))
+        raise WebKitError(f"compilation impossible (détails dans {LOG_DIR}/compilation-webkit.txt)")
+    os.replace(bin_path + ".tmp", bin_path)
+    for old in os.listdir(SUPPORT_DIR):  # ménage des anciennes versions
+        if old.startswith("webfetch-") and os.path.join(SUPPORT_DIR, old) != bin_path:
+            try:
+                os.remove(os.path.join(SUPPORT_DIR, old))
+            except OSError:
+                pass
+    return bin_path
+
+
+def scan_webkit():
+    binary = webfetch_binary()
+    out = tempfile.mkdtemp(prefix="bpd-")
+    try:
+        r = subprocess.run([binary, f"{BASE}{LIST_PATH}", out, str(MAX_PAGES)], capture_output=True, timeout=600)
+        log("WebKit : " + r.stdout.decode("utf-8", "replace").replace("\n", " / ").strip()
+            + (" | " + r.stderr.decode("utf-8", "replace").strip()[-300:] if r.stderr else ""))
+        files = sorted((f for f in os.listdir(out) if re.match(r"page\d+\.html$", f)),
+                       key=lambda x: int(re.search(r"\d+", x).group(0)))
+        if not files:
+            fail = os.path.join(out, "page1-echec.html")
+            if os.path.exists(fail):
+                with open(fail, encoding="utf-8", errors="replace") as fh:
+                    save_debug("derniere-page.html", fh.read())
+            raise WebKitError("la page Promotions ne s'est pas chargée")
+        products, seen_ids = [], set()
+        for i, name in enumerate(files):
+            with open(os.path.join(out, name), encoding="utf-8", errors="replace") as fh:
+                txt = fh.read()
+            items = parse_html(txt) or parse_generic(txt)
+            if i == 0 and not items:
+                save_debug("derniere-page.html", txt)
+                raise WebKitError("page chargée mais aucun produit reconnu")
+            for p in items:
+                if p["id"] not in seen_ids:
+                    seen_ids.add(p["id"])
+                    products.append(p)
+        log(f"Analyse via WebKit terminée : {len(products)} produits, {len(files)} page(s)")
+        return {"ok": True, "products": products, "pages": len(files), "mode": "webkit",
+                "scanned_at": datetime.now().strftime("%d/%m/%Y %H:%M")}
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+_preferred = None  # mémorise la méthode qui a fonctionné
 
 
 def scan():
-    global _prefer_safari
-    if not _prefer_safari:
+    global _preferred
+    methods = [("direct", scan_direct)]
+    if sys.platform == "darwin":
+        methods += [("webkit", scan_webkit), ("safari", scan_safari)]
+    if _preferred:
+        methods.sort(key=lambda m: m[0] != _preferred)
+    errors = []
+    for name, fn in methods:
         try:
-            return scan_direct()
-        except RuntimeError as e:
-            if sys.platform != "darwin":
-                raise
-            log(f"Lecture directe impossible ({e}) : passage par Safari")
-    res = scan_safari()
-    _prefer_safari = True
-    return res
+            res = fn()
+            _preferred = name
+            return res
+        except Exception as e:  # noqa
+            log(f"Méthode {name} impossible : {e}")
+            errors.append((name, e))
+    # message le plus utile : celui de la dernière méthode (Safari) s'il explique un réglage, sinon WebKit
+    labels = {"direct": "Lecture directe", "webkit": "Moteur WebKit", "safari": "Safari"}
+    raise RuntimeError(" · ".join(f"{labels[n]} : {e}" for n, e in errors))
 
 
 def get_scan(force=False):
@@ -585,12 +787,49 @@ def watchdog(server):
             return
 
 
-def main():
+def running_version():
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    except OSError:
-        webbrowser.open(f"http://127.0.0.1:{PORT}/")  # déjà lancé
-        return
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/version", timeout=3) as r:
+            return json.loads(r.read().decode()).get("version")
+    except Exception:  # noqa
+        return None
+
+
+def free_port():
+    """Arrête un ancien exemplaire bloqué ou d'une autre version. Renvoie True si le port a été libéré."""
+    v = running_version()
+    if v and v == VERSION:
+        return False
+    try:
+        r = subprocess.run(["/usr/sbin/lsof", "-nP", "-t", f"-iTCP:{PORT}", "-sTCP:LISTEN"],
+                           capture_output=True, timeout=10)
+        pids = [int(x) for x in r.stdout.decode().split() if x.strip().isdigit() and int(x) != os.getpid()]
+    except Exception:  # noqa
+        pids = []
+    if not pids:
+        return False
+    log(f"Arrêt d'un ancien exemplaire (version {v or 'inconnue/bloquée'}, pid {pids})")
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
+        time.sleep(1.5)
+    return True
+
+
+def main():
+    server = None
+    for attempt in range(2):
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+            break
+        except OSError:
+            if attempt == 0 and free_port():
+                continue
+            webbrowser.open(f"http://127.0.0.1:{PORT}/")  # la bonne version tourne déjà
+            return
     threading.Thread(target=watchdog, args=(server,), daemon=True).start()
     if os.environ.get("BPD_NO_BROWSER") != "1":
         threading.Timer(0.6, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}/")).start()

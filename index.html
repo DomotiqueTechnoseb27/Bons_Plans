@@ -225,13 +225,13 @@ $("#list").addEventListener("click",e=>{
 /* ---------- analyse ---------- */
 async function refresh(force){
   const btn=$("#btnRefresh"); btn.disabled=true; btn.textContent="Analyse en cours…";
-  $("#status").textContent="Lecture des promotions… Si Domadoo bloque la lecture directe, une fenêtre Safari s'ouvre quelques secondes : ne la fermez pas.";
+  $("#status").textContent="Lecture des promotions… (la toute première fois, la préparation du moteur de lecture peut prendre une à deux minutes)";
   try{
     const r=await fetch("/api/scan"+(force?"?force=1":"")); const d=await r.json();
     if(!d.ok) throw new Error(d.error||"Erreur inconnue");
     ALL=d.products;
     const max=Math.max(...ALL.map(p=>p.pct));
-    $("#status").textContent=`${ALL.length} produits en promotion trouvés (jusqu'à -${max} %) · analyse du ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}${d.mode==="safari"?" · lu via Safari":""}`;
+    $("#status").textContent=`${ALL.length} produits en promotion trouvés (jusqu'à -${max} %) · analyse du ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}${d.mode==="safari"?" · lu via Safari":d.mode==="webkit"?" · lu via WebKit":""}`;
     select(true);
   }catch(err){
     $("#status").textContent="L'analyse a échoué.";
