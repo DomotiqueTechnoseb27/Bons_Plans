@@ -90,6 +90,8 @@ main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,min
   <label class="only-amazon"><input type="checkbox" id="rTab" checked> Tablettes</label>
   <label class="only-amazon"><input type="checkbox" id="rHome" checked> Domotique</label>
   <label class="only-amazon"><input type="checkbox" id="rTech" checked> Autre high-tech</label>
+  <label class="only-amazon"><input type="checkbox" id="optGone" checked> Masquer les deals terminés</label>
+  <button class="only-amazon" id="btnAmzCfg" type="button">Photos &amp; prix Amazon :&nbsp;<span id="amzState">…</span></button>
   <label class="only-amazon">Tag Amazon <input type="text" id="optTag" value="ladomdetec-21" style="width:130px;padding:5px 6px;border:1px solid var(--line);border-radius:5px;font:inherit"></label>
 </div>
 
@@ -104,6 +106,22 @@ main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,min
 <main id="list">
   <div class="empty"><strong>Aucune sélection pour l'instant</strong>Cliquez sur « Rafraîchir » : l'application lit la page Promotions de Domadoo et vous propose une sélection prête à publier.</div>
 </main>
+<dialog id="amzDlg" style="border:1px solid var(--line);border-radius:10px;padding:22px;max-width:520px;width:92%">
+  <h2 style="margin:0 0 6px;font-size:18px;color:var(--ink)">Creators API d'Amazon</h2>
+  <p class="small" style="margin:0 0 14px">Dans Amazon Partenaires : Outils &gt; API des créateurs de contenu. Créez des identifiants, puis recopiez ici l'identifiant (Credential ID), le secret (Credential Secret) et la version indiquée par Amazon. Ils sont vérifiés auprès d'Amazon puis enregistrés uniquement sur ce Mac.</p>
+  <label style="display:block;margin:0 0 10px;font-size:14px">Credential ID<br><input id="amzId" autocomplete="off" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:5px;font:inherit"></label>
+  <label style="display:block;margin:0 0 10px;font-size:14px">Credential Secret<br><input id="amzSecret" type="password" autocomplete="off" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:5px;font:inherit"></label>
+  <label style="display:block;margin:0 0 16px;font-size:14px">Version
+    <select id="amzVer" style="padding:6px;border:1px solid var(--line);border-radius:5px;font:inherit">
+      <option>3.2</option><option>2.2</option><option>3.1</option><option>2.1</option><option>3.3</option><option>2.3</option>
+    </select> <span class="small">(Europe : 3.2 ou 2.2, selon ce qu'affiche Amazon)</span></label>
+  <div id="amzMsg" class="small" style="min-height:18px;margin-bottom:10px"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button id="amzDel" type="button" class="linkbtn" style="margin-right:auto">Supprimer les identifiants</button>
+    <button id="amzCancel" type="button">Fermer</button>
+    <button id="amzSave" type="button" class="primary">Vérifier et enregistrer</button>
+  </div>
+</dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -116,7 +134,7 @@ const REFURB_RE = /reconditionn|refurb|occasion|seconde[ -]main|\bgrade [a-d]\b|
 const ACC_RE = /c[âa]ble|plaque de finition|adaptateur|badge rfid|bouton avec guide|cadre de|support mural|antenne|connecteur|pile |piles |vis |fixation/i;
 
 /* ---------- options mémorisées ---------- */
-const OPTS = ["optCount","optMin","optBrand","optOrder","optAcc","optOrderOnly","optRefurb","optDomid","rPhone","rTab","rHome","rTech","optTag"];
+const OPTS = ["optCount","optMin","optBrand","optOrder","optAcc","optOrderOnly","optRefurb","optDomid","rPhone","rTab","rHome","rTech","optTag","optGone"];
 function loadOpts(){ const o = JSON.parse(localStorage.getItem("bpd_opts")||"{}");
   OPTS.forEach(id=>{ if(o[id]===undefined) return; const el=$("#"+id); el.type==="checkbox"?el.checked=o[id]:el.value=o[id]; }); }
 function saveOpts(){ const o={}; OPTS.forEach(id=>{const el=$("#"+id); o[id]=el.type==="checkbox"?el.checked:el.value;}); localStorage.setItem("bpd_opts",JSON.stringify(o)); }
@@ -142,9 +160,8 @@ function affLink(p){
   const id=String($("#optDomid").value||"8").trim();
   let u=p.url.replace(/([?&])domid=[^&]*&?/,"$1").replace(/[?&]$/,""); return u+(u.includes("?")?"&":"?")+"domid="+id; }
 // Amazon : lien image au format SiteStripe (outil officiel Amazon Partenaires)
-const imgOf = p => isAmz(p)
-  ? `https://ws-eu.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${p.asin}&Format=_SL250_&ID=AsinImage&MarketPlace=FR&ServiceVersion=20070822&WS=1&tag=${encodeURIComponent(tag())}`
-  : (p.img_large || p.img);
+// Amazon : photo officielle fournie par la Creators API (vide si l'API n'est pas configurée)
+const imgOf = p => isAmz(p) ? (p.img || "") : (p.img_large || p.img);
 let SHOP = SRC().shop;
 const today = () => new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}).replace(/^1 /,"1er ");
 
@@ -180,7 +197,7 @@ function eligible(){
   const min=+$("#optMin").value||0, acc=$("#optAcc").checked, noOrder=$("#optOrderOnly").checked, noRefurb=$("#optRefurb").checked;
   if(SOURCE==="amazon"){
     const ok={"Smartphones":$("#rPhone").checked,"Tablettes":$("#rTab").checked,"Domotique":$("#rHome").checked};
-    return ALL.filter(p=>(p.rubrique in ok ? ok[p.rubrique] : $("#rTech").checked)
+    return ALL.filter(p=>(p.rubrique in ok ? ok[p.rubrique] : $("#rTech").checked) && !($("#optGone").checked && p.gone)
       && !(noRefurb && (REFURB_RE.test(p.title) || /reconditionn|renewed/i.test(p.title))));
   }
   return ALL.filter(p=>p.pct>=min && !(acc && ACC_RE.test(p.title)) && !(noOrder && /Sur commande/i.test(p.stock))
@@ -239,7 +256,7 @@ function render(){
   if(!CURRENT.length){ list.innerHTML=`<div class="empty"><strong>Aucun produit ne correspond aux filtres</strong>Baissez la remise minimale ou décochez une exclusion.</div>`; updateSel(); return; }
   list.innerHTML=CURRENT.map((p,i)=>`
   <article class="card ${p.on?"":"off"}" data-i="${i}">
-    <a href="${esc(affLink(p))}" target="_blank" rel="noopener"><img src="${esc(imgOf(p))}" alt="" referrerpolicy="no-referrer" loading="lazy"></a>
+    <a href="${esc(affLink(p))}" target="_blank" rel="noopener">${imgOf(p)?`<img src="${esc(imgOf(p))}" alt="" referrerpolicy="no-referrer" loading="lazy">`:`<div class="small" style="width:120px;height:120px;display:flex;align-items:center;justify-content:center;text-align:center;background:#f3f6f8;border-radius:4px">Photo : configurez l'API Amazon</div>`}</a>
     <div>
       <div class="meta"><span>${esc(p.brand)}</span>${isAmz(p)?`<a href="${esc(p.url)}" target="_blank" rel="noopener" class="small">voir le deal Dealabs</a>`:""}${p.stock?`<span class="${/Derniers/i.test(p.stock)?"stock-limit":""}">${esc(p.stock)}</span>`:""}</div>
       <h3>${esc(p.title)}</h3>
@@ -274,12 +291,14 @@ async function refresh(force){
   const btn=$("#btnRefresh"); btn.disabled=true; btn.textContent="Analyse en cours…";
   $("#status").textContent = SOURCE==="amazon" ? "Lecture des deals Amazon sur Dealabs… (30 secondes à 1 minute)" : "Lecture des promotions… (la toute première fois, la préparation du moteur de lecture peut prendre une à deux minutes)";
   try{
-    const r=await fetch(`/api/scan?source=${SOURCE}`+(force?"&force=1":"")); const d=await r.json();
+    const r=await fetch(`/api/scan?source=${SOURCE}&tag=${encodeURIComponent(tag())}`+(force?"&force=1":"")); const d=await r.json();
     if(!d.ok) throw new Error(d.error||"Erreur inconnue");
     ALL=d.products.map(p=>Object.assign({source:"domadoo"},p));
     const max=Math.max(0,...ALL.map(p=>p.pct));
     if(SOURCE==="amazon"){
-      $("#status").textContent=`${ALL.length} deals Amazon trouvés sur Dealabs${d.missing?` (${d.missing} sans lien Amazon identifiable, ignorés)`:""} · ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}`;
+      const gone=ALL.filter(p=>p.gone).length;
+      const apiTxt = !d.api ? " · photos : API Amazon non configurée" : d.api.startsWith("erreur") ? " · API Amazon : "+d.api.slice(7) : ` · photos et prix officiels Amazon${gone?`, ${gone} deal(s) terminé(s)`:""}`;
+      $("#status").textContent=`${ALL.length} deals Amazon trouvés sur Dealabs${d.missing?` (${d.missing} sans lien Amazon identifiable, ignorés)`:""}${apiTxt} · ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}`;
       select(true); return;
     }
     $("#status").textContent=`${ALL.length} produits en promotion trouvés (jusqu'à -${max} %) · analyse du ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}${d.mode==="safari"?" · lu via Safari":d.mode==="webkit"?" · lu via WebKit":""}`;
@@ -302,7 +321,7 @@ function articleHtml(){
   const items=chosen(), max=Math.max(0,...items.map(p=>p.pct)), amz=SOURCE==="amazon";
   const cards=items.map(p=>{ const l=esc(affLink(p)); return `
 <div class="tsd-card" style="display:flex;gap:18px;align-items:flex-start;border:1px solid #d6dde3;border-left:5px solid #0f6e8c;border-radius:6px;padding:16px;margin:0 0 18px;background:#fff;">
-  <a href="${l}" target="_blank" rel="sponsored noopener" style="flex:0 0 150px;"><img src="${esc(imgOf(p))}" alt="${esc(p.title)}" width="150" height="150" loading="lazy" style="width:150px;height:150px;object-fit:contain;display:block;"></a>
+  ${imgOf(p)?`<a href="${l}" target="_blank" rel="sponsored noopener" style="flex:0 0 150px;"><img src="${esc(imgOf(p))}" alt="${esc(p.title)}" width="150" height="150" loading="lazy" style="width:150px;height:150px;object-fit:contain;display:block;"></a>`:""}
   <div style="flex:1;min-width:0;">
     <h3 style="margin:0 0 8px;font-size:18px;line-height:1.3;color:#14303d;">${esc(p.title)}</h3>
     <p style="margin:0 0 10px;font-size:15px;line-height:1.55;color:#2b3a44;">${esc(p.text)}</p>
@@ -394,6 +413,23 @@ function setSource(src, silent){
 }
 document.querySelectorAll(".srcsw button").forEach(b=>b.addEventListener("click",()=>{ if(b.dataset.src!==SOURCE) setSource(b.dataset.src); }));
 setSource(SOURCE, true);
+
+/* ---------- identifiants Creators API ---------- */
+async function amzState(){
+  try{ const c=await (await fetch("/api/amazon-config")).json();
+    $("#amzState").textContent = c.configured ? `connectée (v${c.version}) ✓` : "à configurer"; return c; }catch{ return {}; }
+}
+$("#btnAmzCfg").addEventListener("click",async()=>{ const c=await amzState(); $("#amzMsg").textContent=c.configured?"Identifiants déjà enregistrés : saisissez-en de nouveaux pour les remplacer.":""; $("#amzSecret").value=""; $("#amzDlg").showModal(); });
+$("#amzCancel").addEventListener("click",()=>$("#amzDlg").close());
+$("#amzSave").addEventListener("click",async()=>{
+  $("#amzMsg").textContent="Vérification auprès d'Amazon…";
+  const r=await (await fetch("/api/amazon-config",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({credential_id:$("#amzId").value,credential_secret:$("#amzSecret").value,version:$("#amzVer").value})})).json();
+  if(r.ok){ $("#amzSecret").value=""; $("#amzDlg").close(); await amzState(); toast("API Amazon connectée. Cliquez sur Rafraîchir (Alt + clic pour forcer)."); }
+  else $("#amzMsg").textContent="Échec : "+r.error;
+});
+$("#amzDel").addEventListener("click",async()=>{ await fetch("/api/amazon-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({delete:true})}); await amzState(); $("#amzMsg").textContent="Identifiants supprimés."; });
+amzState();
 
 /* ---------- mises à jour ---------- */
 async function checkUpdate(manual){

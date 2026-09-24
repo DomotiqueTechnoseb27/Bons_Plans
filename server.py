@@ -700,6 +700,7 @@ KEYWORDS = [
 ]
 ASIN_CACHE_FILE = os.path.join(SUPPORT_DIR, "asin-cache.json")
 _asin_lock = threading.Lock()
+_amz_tag = "ladomdetec-21"
 
 
 def load_asin_cache():
@@ -869,9 +870,152 @@ def scan_amazon():
             continue
         d["asin"] = asin
         products.append(d)
-    log(f"Amazon via Dealabs : {len(products)} deals ({missing} sans lien Amazon identifiable), groupes {groups_ok}")
+    api_note = ""
+    try:
+        n = enrich_with_api(products, _amz_tag)
+        if n is not None:
+            api_note = f"api:{n}"
+    except Exception as e:  # noqa
+        log(f"Creators API : {e}")
+        api_note = f"erreur:{e}"
+    log(f"Amazon via Dealabs : {len(products)} deals ({missing} sans lien Amazon identifiable), groupes {groups_ok}, {api_note}")
     return {"ok": True, "products": products, "missing": missing, "groups": groups_ok, "mode": "dealabs",
-            "scanned_at": datetime.now().strftime("%d/%m/%Y %H:%M")}
+            "api": api_note, "scanned_at": datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+
+# ---------------------------------------------------------------- Amazon Creators API (photos et prix officiels)
+CREATORS_HOST = "https://creatorsapi.amazon"
+CREATORS_AUTH = {
+    "2.1": "https://creatorsapi.auth.us-east-1.amazoncognito.com/oauth2/token",
+    "2.2": "https://creatorsapi.auth.eu-south-2.amazoncognito.com/oauth2/token",
+    "2.3": "https://creatorsapi.auth.us-west-2.amazoncognito.com/oauth2/token",
+    "3.1": "https://api.amazon.com/auth/o2/token",
+    "3.2": "https://api.amazon.co.uk/auth/o2/token",
+    "3.3": "https://api.amazon.co.jp/auth/o2/token",
+}
+AMZ_CFG_FILE = os.path.join(SUPPORT_DIR, "amazon-api.json")
+_token = {"value": None, "exp": 0, "key": None}
+
+
+def amz_config():
+    try:
+        with open(AMZ_CFG_FILE, encoding="utf-8") as f:
+            c = json.load(f)
+        if c.get("credential_id") and c.get("credential_secret") and c.get("version") in CREATORS_AUTH:
+            return c
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def save_amz_config(c):
+    os.makedirs(SUPPORT_DIR, exist_ok=True)
+    fd = os.open(AMZ_CFG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # lisible par vous seul
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(c, f)
+    _token.update(value=None, exp=0, key=None)
+
+
+def http_post(url, body, headers, timeout=30):
+    curl = shutil.which("curl") or "/usr/bin/curl"
+    cmd = [curl, "-sS", "--max-time", str(timeout), "-X", "POST", "--data-binary", "@-",
+           "-w", "\n__HTTP_CODE__%{http_code}"]
+    for k, v in headers.items():
+        cmd += ["-H", f"{k}: {v}"]
+    cmd.append(url)
+    r = subprocess.run(cmd, input=body.encode("utf-8"), capture_output=True, timeout=timeout + 10)
+    if r.returncode != 0:
+        raise RuntimeError(f"connexion impossible ({r.stderr.decode('utf-8', 'replace').strip()})")
+    out, _, code = r.stdout.decode("utf-8", "replace").rpartition("\n__HTTP_CODE__")
+    return int(code or 0), out
+
+
+def amz_token(c):
+    key = (c["credential_id"], c["version"])
+    if _token["value"] and _token["key"] == key and time.time() < _token["exp"]:
+        return _token["value"]
+    lwa = c["version"].startswith("3.")
+    data = {"grant_type": "client_credentials", "client_id": c["credential_id"],
+            "client_secret": c["credential_secret"],
+            "scope": "creatorsapi::default" if lwa else "creatorsapi/default"}
+    if lwa:
+        code, out = http_post(CREATORS_AUTH[c["version"]], json.dumps(data), {"Content-Type": "application/json"})
+    else:
+        from urllib.parse import urlencode
+        code, out = http_post(CREATORS_AUTH[c["version"]], urlencode(data),
+                              {"Content-Type": "application/x-www-form-urlencoded"})
+    if code != 200:
+        raise RuntimeError(f"identifiants refusés par Amazon (HTTP {code}) : {out[:300]}")
+    tok = json.loads(out)
+    _token.update(value=tok["access_token"], exp=time.time() + int(tok.get("expires_in", 3600)) - 60, key=key)
+    return _token["value"]
+
+
+def amz_get_items(asins, c, tag):
+    """Renvoie {asin: {img, price, old, pct, available}} via GetItems (10 ASIN par appel, ~1 appel/s)."""
+    out = {}
+    resources = ["images.primary.large", "images.primary.medium", "itemInfo.title",
+                 "offersV2.listings.price", "offersV2.listings.availability", "offersV2.listings.isBuyBoxWinner"]
+    for i in range(0, len(asins), 10):
+        chunk = asins[i:i + 10]
+        body = json.dumps({"partnerTag": tag, "itemIds": chunk, "resources": resources})
+        for attempt in range(3):
+            tok = amz_token(c)
+            auth = f"Bearer {tok}" if c["version"].startswith("3.") else f"Bearer {tok}, Version {c['version']}"
+            code, txt = http_post(CREATORS_HOST + "/catalog/v1/getItems", body,
+                                  {"Authorization": auth, "Content-Type": "application/json; charset=utf-8",
+                                   "x-marketplace": "www.amazon.fr"})
+            if code == 401 and attempt == 0:
+                _token.update(value=None)
+                continue
+            if code in (429, 500, 502, 503) and attempt < 2:
+                time.sleep(2 + attempt * 2)
+                continue
+            break
+        if code != 200:
+            save_debug("creators-api-erreur.txt", f"HTTP {code}\n{txt[:5000]}")
+            raise RuntimeError(f"Creators API : réponse HTTP {code} ({txt[:200]})")
+        data = json.loads(txt)
+        for it in (data.get("itemsResult") or {}).get("items") or []:
+            asin = it.get("asin")
+            if not asin:
+                continue
+            prim = ((it.get("images") or {}).get("primary") or {})
+            img = (prim.get("large") or {}).get("url") or (prim.get("medium") or {}).get("url") or ""
+            listings = ((it.get("offersV2") or {}).get("listings")) or []
+            listings.sort(key=lambda l: not l.get("isBuyBoxWinner"))
+            price = old = pct = None
+            if listings:
+                pr = listings[0].get("price") or {}
+                price = ((pr.get("money") or {}).get("amount"))
+                old = (((pr.get("savingBasis") or {}).get("money") or {}).get("amount"))
+                pct = ((pr.get("savings") or {}).get("percentage"))
+            out[asin] = {"img": img, "price": price, "old": old, "pct": pct, "available": bool(listings)}
+        time.sleep(1.1)  # quota de départ d'Amazon : environ 1 requête par seconde
+    return out
+
+
+def enrich_with_api(products, tag):
+    c = amz_config()
+    if not c or not products:
+        return None
+    info = amz_get_items(sorted({p["asin"] for p in products}), c, tag)
+    for p in products:
+        d = info.get(p["asin"])
+        p["api"] = True
+        if not d:
+            p["gone"] = True  # produit introuvable ou retiré
+            continue
+        p["img"] = d["img"]
+        if d["price"]:
+            dealabs_price = p["price"]
+            p["price"] = float(d["price"])
+            p["old"] = float(d["old"]) if d["old"] and float(d["old"]) > p["price"] else None
+            p["pct"] = (round(d["pct"]) if d["pct"] else round((1 - p["price"] / p["old"]) * 100)) if p["old"] else 0
+            p["gone"] = p["price"] > dealabs_price * 1.05  # le prix est remonté : deal sans doute terminé
+        else:
+            p["gone"] = not d["available"]
+    return len(info)
 
 
 _preferred = None  # mémorise la méthode qui a fonctionné
@@ -925,6 +1069,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def do_POST(self):
+        global _last_seen
+        _last_seen = time.time()
+        if urlparse(self.path).path == "/api/amazon-config":
+            return self.send(200, json.dumps(handle_amazon_config(self), ensure_ascii=False))
+        self.send(404, json.dumps({"error": "introuvable"}))
+
     def do_GET(self):
         global _last_seen
         _last_seen = time.time()
@@ -938,11 +1089,18 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(u.query)
             force = q.get("force", ["0"])[0] == "1"
             source = q.get("source", ["domadoo"])[0]
+            global _amz_tag
+            if q.get("tag", [""])[0]:
+                _amz_tag = q["tag"][0]
             try:
                 return self.send(200, json.dumps(get_scan(force, source), ensure_ascii=False))
             except Exception as e:
                 log(f"Erreur d'analyse : {e}")
                 return self.send(200, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        if u.path == "/api/amazon-config":
+            c = amz_config()
+            return self.send(200, json.dumps({"configured": bool(c), "version": (c or {}).get("version"),
+                                              "id_hint": ((c or {}).get("credential_id") or "")[:6]}))
         if u.path == "/api/version":
             return self.send(200, json.dumps({"version": VERSION}))
         if u.path == "/api/update-check":
@@ -958,6 +1116,29 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
         self.send(404, json.dumps({"error": "introuvable"}))
+
+
+def handle_amazon_config(handler):
+    try:
+        n = int(handler.headers.get("Content-Length") or 0)
+        data = json.loads(handler.rfile.read(n).decode("utf-8") or "{}")
+        if data.get("delete"):
+            try:
+                os.remove(AMZ_CFG_FILE)
+            except OSError:
+                pass
+            return {"ok": True, "configured": False}
+        c = {"credential_id": data.get("credential_id", "").strip(),
+             "credential_secret": data.get("credential_secret", "").strip(),
+             "version": data.get("version", "").strip()}
+        if not c["credential_id"] or not c["credential_secret"] or c["version"] not in CREATORS_AUTH:
+            return {"ok": False, "error": "Renseignez l'identifiant, le secret et la version (ex. 2.2 ou 3.2)."}
+        _token.update(value=None)
+        amz_token(c)  # vérifie les identifiants auprès d'Amazon avant d'enregistrer
+        save_amz_config(c)
+        return {"ok": True, "configured": True}
+    except Exception as e:  # noqa
+        return {"ok": False, "error": str(e)}
 
 
 def run_boot(arg):
