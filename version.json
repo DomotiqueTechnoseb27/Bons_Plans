@@ -1,8 +1,8 @@
 {
-  "version": "1.2.3",
-  "notes": "Relance fiable de l’application, plus besoin du Terminal",
+  "version": "1.3.0",
+  "notes": "Nouvelle source : bons plans Amazon repérés sur Dealabs",
   "files": {
-    "server.py": "77e679615f07f36194ef08064028a902673830cf75840a53e8ebc4276402531c",
-    "index.html": "e2fab189b4c31afaada7f9d559b65e9827c1ec08c46b589988213fa48369842a"
+    "server.py": "18db2c74f15c68923ce57a5dd9f02cf00919a2e00ecf3933ee5d0ce9a13943fa",
+    "index.html": "68c6d5179e01a164dc0690c37beb2fbc58c971fd61265a34bc9ffb0d42e94d30"
   }
 }

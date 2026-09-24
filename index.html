@@ -42,6 +42,11 @@ main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,min
 .links button{padding:2px 8px;font-size:12px}
 .actions{grid-column:1/-1;display:flex;gap:8px;align-items:center;border-top:1px solid #edf1f3;padding-top:8px}
 .actions label{font-size:13.5px;display:flex;gap:6px;align-items:center;margin-right:auto}
+.srcsw{display:inline-flex;border:1px solid #46626f;border-radius:7px;overflow:hidden}
+.srcsw button{border:0;border-radius:0;background:transparent;color:#dbe7ec;padding:7px 14px;font-weight:600}
+.srcsw button.on{background:#fff;color:var(--ink)}
+.only-amazon{display:none}.src-amazon .only-amazon{display:flex}.src-amazon .only-domadoo{display:none}
+.stamp{font-size:12px;color:var(--muted)}
 .empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)}
 .empty strong{display:block;font-size:18px;color:var(--ink);margin-bottom:6px}
 .error{grid-column:1/-1;background:#fff3ef;border:1px solid #f2c2b2;color:#8a2c10;padding:14px 16px;border-radius:6px}
@@ -55,7 +60,8 @@ main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,min
 </head>
 <body>
 <header>
-  <h1>Bons plans Domadoo <span id="ver" style="font-weight:400;font-size:12.5px;color:#9fb6c2"></span></h1>
+  <h1>Bons plans <span id="ver" style="font-weight:400;font-size:12.5px;color:#9fb6c2"></span></h1>
+  <div class="srcsw" role="group" aria-label="Boutique"><button data-src="domadoo">Domadoo</button><button data-src="amazon">Amazon (via Dealabs)</button></div>
   <div class="status" id="status">Prêt. Cliquez sur « Rafraîchir » pour analyser les promotions.</div>
   <button class="primary big" id="btnRefresh">Rafraîchir</button>
   <button class="ghost" id="btnQuit" title="Arrêter l'application">Quitter</button>
@@ -67,7 +73,7 @@ main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,min
 </div>
 <div class="controls">
   <label>Produits à proposer <input type="number" id="optCount" min="5" max="80" value="35"></label>
-  <label>Remise minimale <input type="number" id="optMin" min="0" max="90" value="10"> %</label>
+  <label class="only-domadoo">Remise minimale <input type="number" id="optMin" min="0" max="90" value="10"> %</label>
   <label>Max. par marque <input type="number" id="optBrand" min="1" max="50" value="5"></label>
   <label>Ordre
     <select id="optOrder">
@@ -76,10 +82,15 @@ main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,min
       <option value="random">Aléatoire</option>
       <option value="price">Prix croissant</option>
     </select></label>
-  <label><input type="checkbox" id="optAcc" checked> Exclure câbles, plaques, adaptateurs…</label>
-  <label><input type="checkbox" id="optOrderOnly"> Exclure « Sur commande »</label>
+  <label class="only-domadoo"><input type="checkbox" id="optAcc" checked> Exclure câbles, plaques, adaptateurs…</label>
+  <label class="only-domadoo"><input type="checkbox" id="optOrderOnly"> Exclure « Sur commande »</label>
   <label><input type="checkbox" id="optRefurb" checked> Exclure les reconditionnés</label>
-  <label>Identifiant affilié <input type="number" id="optDomid" value="8" style="width:56px"></label>
+  <label class="only-domadoo">Identifiant affilié <input type="number" id="optDomid" value="8" style="width:56px"></label>
+  <label class="only-amazon"><input type="checkbox" id="rPhone" checked> Smartphones</label>
+  <label class="only-amazon"><input type="checkbox" id="rTab" checked> Tablettes</label>
+  <label class="only-amazon"><input type="checkbox" id="rHome" checked> Domotique</label>
+  <label class="only-amazon"><input type="checkbox" id="rTech" checked> Autre high-tech</label>
+  <label class="only-amazon">Tag Amazon <input type="text" id="optTag" value="ladomdetec-21" style="width:130px;padding:5px 6px;border:1px solid var(--line);border-radius:5px;font:inherit"></label>
 </div>
 
 <div class="exports">
@@ -105,7 +116,7 @@ const REFURB_RE = /reconditionn|refurb|occasion|seconde[ -]main|\bgrade [a-d]\b|
 const ACC_RE = /c[âa]ble|plaque de finition|adaptateur|badge rfid|bouton avec guide|cadre de|support mural|antenne|connecteur|pile |piles |vis |fixation/i;
 
 /* ---------- options mémorisées ---------- */
-const OPTS = ["optCount","optMin","optBrand","optOrder","optAcc","optOrderOnly","optRefurb","optDomid"];
+const OPTS = ["optCount","optMin","optBrand","optOrder","optAcc","optOrderOnly","optRefurb","optDomid","rPhone","rTab","rHome","rTech","optTag"];
 function loadOpts(){ const o = JSON.parse(localStorage.getItem("bpd_opts")||"{}");
   OPTS.forEach(id=>{ if(o[id]===undefined) return; const el=$("#"+id); el.type==="checkbox"?el.checked=o[id]:el.value=o[id]; }); }
 function saveOpts(){ const o={}; OPTS.forEach(id=>{const el=$("#"+id); o[id]=el.type==="checkbox"?el.checked:el.value;}); localStorage.setItem("bpd_opts",JSON.stringify(o)); }
@@ -117,14 +128,40 @@ const esc = s => String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replac
 function hash(s){let h=2166136261;for(const c of String(s)){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),2200);}
-function affLink(url){ const id=String($("#optDomid").value||"8").trim();
-  let u=url.replace(/([?&])domid=[^&]*&?/,"$1").replace(/[?&]$/,""); return u+(u.includes("?")?"&":"?")+"domid="+id; }
-const imgOf = p => p.img_large || p.img;
-const SHOP = "Domadoo";  // boutique concernée (préparé pour l'ajout de Zigbuy)
+/* ---------- boutiques ---------- */
+const SOURCES = {
+  domadoo: {shop:"Domadoo", theme:"domotique", btn:"Voir l'offre sur Domadoo"},
+  amazon:  {shop:"Amazon",  theme:"high-tech", btn:"Voir l'offre sur Amazon"},
+};
+let SOURCE = localStorage.getItem("bpd_source") || "domadoo";
+const SRC = () => SOURCES[SOURCE];
+const tag = () => String($("#optTag").value||"ladomdetec-21").trim();
+const isAmz = p => p.source==="amazon";
+function affLink(p){
+  if(isAmz(p)) return `https://www.amazon.fr/dp/${p.asin}?tag=${encodeURIComponent(tag())}`;
+  const id=String($("#optDomid").value||"8").trim();
+  let u=p.url.replace(/([?&])domid=[^&]*&?/,"$1").replace(/[?&]$/,""); return u+(u.includes("?")?"&":"?")+"domid="+id; }
+// Amazon : lien image au format SiteStripe (outil officiel Amazon Partenaires)
+const imgOf = p => isAmz(p)
+  ? `https://ws-eu.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${p.asin}&Format=_SL250_&ID=AsinImage&MarketPlace=FR&ServiceVersion=20070822&WS=1&tag=${encodeURIComponent(tag())}`
+  : (p.img_large || p.img);
+let SHOP = SRC().shop;
 const today = () => new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}).replace(/^1 /,"1er ");
 
 /* ---------- texte de promotion ---------- */
+function promoTextAmazon(p){
+  const h = hash(p.id);
+  const intro = {"Smartphones":["Bon plan smartphone !","Smartphone en promo !","Prix en baisse sur ce smartphone !"],
+                 "Tablettes":["Bon plan tablette !","Tablette en promo !","Prix en baisse sur cette tablette !"],
+                 "Domotique":["Bon plan maison connectée !","Domotique en promo !","Prix en baisse pour votre maison connectée !"]}[p.rubrique]
+             || ["Bon plan high-tech !","Promo high-tech !","Prix en baisse !"];
+  let t = `${intro[h%intro.length]} ${p.title} : ${eur(p.price)} € sur Amazon`;
+  t += p.old ? ` au lieu de ${eur(p.old)} € (-${p.pct} %).` : ".";
+  t += ` Prix constaté le ${p.seen_at}, susceptible d'évoluer à tout moment.`;
+  return t;
+}
 function promoText(p){
+  if(isAmz(p)) return promoTextAmazon(p);
   const h = hash(p.id), save = eur(p.old - p.price);
   const name = p.title.replace(/^[A-Z0-9ÉÈ .&'-]{2,}\s[-–]\s/,"").trim() || p.title;
   const openers = p.pct>=50 ? ["Remise exceptionnelle !","Prix cassé !","Grosse baisse de prix !"]
@@ -141,6 +178,11 @@ function promoText(p){
 /* ---------- sélection ---------- */
 function eligible(){
   const min=+$("#optMin").value||0, acc=$("#optAcc").checked, noOrder=$("#optOrderOnly").checked, noRefurb=$("#optRefurb").checked;
+  if(SOURCE==="amazon"){
+    const ok={"Smartphones":$("#rPhone").checked,"Tablettes":$("#rTab").checked,"Domotique":$("#rHome").checked};
+    return ALL.filter(p=>(p.rubrique in ok ? ok[p.rubrique] : $("#rTech").checked)
+      && !(noRefurb && (REFURB_RE.test(p.title) || /reconditionn|renewed/i.test(p.title))));
+  }
   return ALL.filter(p=>p.pct>=min && !(acc && ACC_RE.test(p.title)) && !(noOrder && /Sur commande/i.test(p.stock))
     && !(noRefurb && (REFURB_RE.test(p.title) || REFURB_RE.test(p.url)))
     && !/Rupture|Épuisé/i.test(p.stock));
@@ -197,14 +239,14 @@ function render(){
   if(!CURRENT.length){ list.innerHTML=`<div class="empty"><strong>Aucun produit ne correspond aux filtres</strong>Baissez la remise minimale ou décochez une exclusion.</div>`; updateSel(); return; }
   list.innerHTML=CURRENT.map((p,i)=>`
   <article class="card ${p.on?"":"off"}" data-i="${i}">
-    <a href="${esc(affLink(p.url))}" target="_blank" rel="noopener"><img src="${esc(imgOf(p))}" alt="" referrerpolicy="no-referrer" loading="lazy"></a>
+    <a href="${esc(affLink(p))}" target="_blank" rel="noopener"><img src="${esc(imgOf(p))}" alt="" referrerpolicy="no-referrer" loading="lazy"></a>
     <div>
-      <div class="meta"><span>${esc(p.brand)}</span>${p.stock?`<span class="${/Derniers/i.test(p.stock)?"stock-limit":""}">${esc(p.stock)}</span>`:""}</div>
+      <div class="meta"><span>${esc(p.brand)}</span>${isAmz(p)?`<a href="${esc(p.url)}" target="_blank" rel="noopener" class="small">voir le deal Dealabs</a>`:""}${p.stock?`<span class="${/Derniers/i.test(p.stock)?"stock-limit":""}">${esc(p.stock)}</span>`:""}</div>
       <h3>${esc(p.title)}</h3>
-      <div class="prices"><s>${eur(p.old)} €</s><strong>${eur(p.price)} €</strong><span class="pct">-${p.pct} %</span></div>
+      <div class="prices">${p.old?`<s>${eur(p.old)} €</s>`:""}<strong>${eur(p.price)} €</strong>${p.pct?`<span class="pct">-${p.pct} %</span>`:""}${isAmz(p)?`<span class="stamp">${esc(p.rubrique)} · prix du ${esc(p.seen_at)}</span>`:""}</div>
       <textarea data-i="${i}" aria-label="Texte de promotion">${esc(p.text)}</textarea>
       <div class="links">
-        <span>Lien</span><input readonly value="${esc(affLink(p.url))}"><button data-copy="link" data-i="${i}">Copier</button>
+        <span>Lien</span><input readonly value="${esc(affLink(p))}"><button data-copy="link" data-i="${i}">Copier</button>
         <span>Photo</span><input readonly value="${esc(imgOf(p))}"><button data-copy="img" data-i="${i}">Copier</button>
       </div>
     </div>
@@ -222,7 +264,7 @@ $("#list").addEventListener("input",e=>{ if(e.target.matches("textarea")) CURREN
 $("#list").addEventListener("change",e=>{ const i=e.target.dataset.on; if(i!==undefined){CURRENT[+i].on=e.target.checked; e.target.closest(".card").classList.toggle("off",!e.target.checked); updateSel();} });
 $("#list").addEventListener("click",e=>{
   const b=e.target.closest("button"); if(!b) return;
-  if(b.dataset.copy){ const p=CURRENT[+b.dataset.i]; copy(b.dataset.copy==="link"?affLink(p.url):imgOf(p)); }
+  if(b.dataset.copy){ const p=CURRENT[+b.dataset.i]; copy(b.dataset.copy==="link"?affLink(p):imgOf(p)); }
   if(b.dataset.replace!==undefined) replaceOne(+b.dataset.replace);
   if(b.dataset.regen!==undefined){ const i=+b.dataset.regen, p=CURRENT[i]; p._v=(p._v||0)+1; p.text=promoText(Object.assign({},p,{id:p.id+"#"+p._v})); render(); }
 });
@@ -230,12 +272,16 @@ $("#list").addEventListener("click",e=>{
 /* ---------- analyse ---------- */
 async function refresh(force){
   const btn=$("#btnRefresh"); btn.disabled=true; btn.textContent="Analyse en cours…";
-  $("#status").textContent="Lecture des promotions… (la toute première fois, la préparation du moteur de lecture peut prendre une à deux minutes)";
+  $("#status").textContent = SOURCE==="amazon" ? "Lecture des deals Amazon sur Dealabs… (30 secondes à 1 minute)" : "Lecture des promotions… (la toute première fois, la préparation du moteur de lecture peut prendre une à deux minutes)";
   try{
-    const r=await fetch("/api/scan"+(force?"?force=1":"")); const d=await r.json();
+    const r=await fetch(`/api/scan?source=${SOURCE}`+(force?"&force=1":"")); const d=await r.json();
     if(!d.ok) throw new Error(d.error||"Erreur inconnue");
-    ALL=d.products;
-    const max=Math.max(...ALL.map(p=>p.pct));
+    ALL=d.products.map(p=>Object.assign({source:"domadoo"},p));
+    const max=Math.max(0,...ALL.map(p=>p.pct));
+    if(SOURCE==="amazon"){
+      $("#status").textContent=`${ALL.length} deals Amazon trouvés sur Dealabs${d.missing?` (${d.missing} sans lien Amazon identifiable, ignorés)`:""} · ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}`;
+      select(true); return;
+    }
     $("#status").textContent=`${ALL.length} produits en promotion trouvés (jusqu'à -${max} %) · analyse du ${d.scanned_at}${d.cached?" (déjà en mémoire)":""}${d.mode==="safari"?" · lu via Safari":d.mode==="webkit"?" · lu via WebKit":""}`;
     select(true);
   }catch(err){
@@ -253,23 +299,25 @@ function download(name,content,type){ const a=document.createElement("a"); a.hre
 const stamp=()=>new Date().toISOString().slice(0,10);
 
 function articleHtml(){
-  const items=chosen(), max=Math.max(...items.map(p=>p.pct));
-  const cards=items.map(p=>{ const l=esc(affLink(p.url)); return `
+  const items=chosen(), max=Math.max(0,...items.map(p=>p.pct)), amz=SOURCE==="amazon";
+  const cards=items.map(p=>{ const l=esc(affLink(p)); return `
 <div class="tsd-card" style="display:flex;gap:18px;align-items:flex-start;border:1px solid #d6dde3;border-left:5px solid #0f6e8c;border-radius:6px;padding:16px;margin:0 0 18px;background:#fff;">
   <a href="${l}" target="_blank" rel="sponsored noopener" style="flex:0 0 150px;"><img src="${esc(imgOf(p))}" alt="${esc(p.title)}" width="150" height="150" loading="lazy" style="width:150px;height:150px;object-fit:contain;display:block;"></a>
   <div style="flex:1;min-width:0;">
     <h3 style="margin:0 0 8px;font-size:18px;line-height:1.3;color:#14303d;">${esc(p.title)}</h3>
     <p style="margin:0 0 10px;font-size:15px;line-height:1.55;color:#2b3a44;">${esc(p.text)}</p>
-    <p style="margin:0 0 12px;"><span style="text-decoration:line-through;color:#8a97a1;font-size:15px;">${eur(p.old)} €</span> <strong style="font-size:22px;color:#0f6e8c;margin-left:8px;">${eur(p.price)} €</strong> <span style="background:#e8491d;color:#fff;font-weight:700;font-size:13px;padding:3px 8px;border-radius:4px;margin-left:8px;">-${p.pct} %</span></p>
-    <a href="${l}" target="_blank" rel="sponsored noopener" style="display:inline-block;background:#0f6e8c;color:#fff;text-decoration:none;font-weight:600;padding:9px 16px;border-radius:5px;">Voir l'offre sur Domadoo</a>
+    <p style="margin:0 0 12px;">${p.old?`<span style="text-decoration:line-through;color:#8a97a1;font-size:15px;margin-right:8px;">${eur(p.old)} €</span> `:""}<strong style="font-size:22px;color:#0f6e8c;">${eur(p.price)} €</strong>${p.pct?` <span style="background:#e8491d;color:#fff;font-weight:700;font-size:13px;padding:3px 8px;border-radius:4px;margin-left:8px;">-${p.pct} %</span>`:""}${amz?`<br><span style="font-size:12.5px;color:#5a6b78;">Prix constaté le ${esc(p.seen_at)}, susceptible d'évoluer.</span>`:""}</p>
+    <a href="${l}" target="_blank" rel="sponsored noopener" style="display:inline-block;background:#0f6e8c;color:#fff;text-decoration:none;font-weight:600;padding:9px 16px;border-radius:5px;">${SRC().btn}</a>
   </div>
 </div>`;}).join("");
-  return `<!-- ===== Début du bloc Bons plans Domadoo ===== -->
+  return `<!-- ===== Début du bloc Bons plans ${SHOP} ===== -->
 <div class="tsd-promos" style="max-width:820px;margin:0 auto;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<h2 style="font-size:26px;color:#14303d;margin:0 0 12px;">Bons plans ${SHOP} du ${today()} : ${items.length} produits domotique en promotion</h2>
-<p style="font-size:16px;line-height:1.6;color:#2b3a44;">Domadoo, la boutique française spécialisée en domotique, propose en ce moment de nombreuses promotions. J'ai sélectionné pour vous ${items.length} offres intéressantes pour une maison connectée, avec des remises allant jusqu'à -${max} %.</p>
+<h2 style="font-size:26px;color:#14303d;margin:0 0 12px;">Bons plans ${SHOP} du ${today()} : ${items.length} produit${items.length>1?"s":""} ${SRC().theme} en promotion</h2>
+<p style="font-size:16px;line-height:1.6;color:#2b3a44;">${amz
+  ? `Voici ${items.length} bons plans high-tech repérés sur Amazon : smartphones, tablettes, domotique et objets connectés à prix réduit.`
+  : `Domadoo, la boutique française spécialisée en domotique, propose en ce moment de nombreuses promotions. J'ai sélectionné pour vous ${items.length} offres intéressantes pour une maison connectée, avec des remises allant jusqu'à -${max} %.`}</p>
 <p style="font-size:16px;line-height:1.6;color:#2b3a44;">Les stocks sont parfois limités et les prix peuvent évoluer à tout moment : ne tardez pas si un produit vous intéresse.</p>
-<p style="font-size:13px;line-height:1.5;color:#5a6b78;background:#f1f5f7;padding:10px 12px;border-radius:5px;margin:0 0 22px;">Les liens de cet article sont des liens affiliés : si vous passez commande via ces liens, Domotique Technoseb27 perçoit une petite commission, sans aucun surcoût pour vous. Merci pour votre soutien ! Prix relevés le ${today()}.</p>
+<p style="font-size:13px;line-height:1.5;color:#5a6b78;background:#f1f5f7;padding:10px 12px;border-radius:5px;margin:0 0 22px;">Les liens de cet article sont des liens affiliés : si vous passez commande via ces liens, Domotique Technoseb27 perçoit une petite commission, sans aucun surcoût pour vous. Merci pour votre soutien ! Prix relevés le ${today()}.${amz?" En tant que Partenaire Amazon, je réalise un bénéfice sur les achats remplissant les conditions requises.":""}</p>
 ${cards}
 <p style="font-size:16px;line-height:1.6;color:#2b3a44;margin-top:24px;">Vous avez repéré une autre bonne affaire ou vous hésitez entre deux produits ? Dites-le-moi en commentaire, je vous aiderai à choisir celui qui s'intégrera le mieux à votre installation Home Assistant.</p>
 </div>
@@ -288,23 +336,23 @@ $("#btnPreview").addEventListener("click",()=>{ if(!need()) return;
 $("#btnCsv").addEventListener("click",()=>{ if(!need()) return;
   const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
   const rows=[["Titre","Marque","Prix","Ancien prix","Remise","Stock","Lien affilié","Lien photo","Texte"]]
-    .concat(chosen().map(p=>[p.title,p.brand,eur(p.price),eur(p.old),"-"+p.pct+" %",p.stock,affLink(p.url),imgOf(p),p.text]));
-  download(`bons-plans-domadoo-${stamp()}.csv`,"\ufeff"+rows.map(r=>r.map(q).join(";")).join("\r\n"),"text/csv;charset=utf-8"); });
+    .concat(chosen().map(p=>[p.title,p.brand,eur(p.price),p.old?eur(p.old):"",p.pct?"-"+p.pct+" %":"",p.stock||p.seen_at||"",affLink(p),imgOf(p),p.text]));
+  download(`bons-plans-${SOURCE}-${stamp()}.csv`,"\ufeff"+rows.map(r=>r.map(q).join(";")).join("\r\n"),"text/csv;charset=utf-8"); });
 $("#btnPhp").addEventListener("click",()=>{ if(!need()) return;
   const s=v=>"'"+String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";
   const items=chosen().map(p=>`        [
-            'unique_id'    => ${s("domadoo-"+p.id)},
+            'unique_id'    => ${s((isAmz(p)?"":"domadoo-")+p.id)},
             'title'        => ${s(p.title)},
             'description'  => ${s(p.text)},
             'img'          => ${s(imgOf(p))},
-            'url'          => ${s(affLink(p.url))},
-            'orig_url'     => ${s(p.url)},
-            'domain'       => 'domadoo.fr',
+            'url'          => ${s(affLink(p))},
+            'orig_url'     => ${s(isAmz(p)?"https://www.amazon.fr/dp/"+p.asin:p.url)},
+            'domain'       => ${s(isAmz(p)?"amazon.fr":"domadoo.fr")},
             'price'        => ${p.price},
-            'priceOld'     => ${p.old},
+            'priceOld'     => ${p.old||0},
             'currencyCode' => 'EUR',
-            'merchant'     => 'Domadoo',
-            'badge'        => ${s("-"+p.pct+"%")},
+            'merchant'     => ${s(SHOP)},
+            'badge'        => ${s(p.pct?"-"+p.pct+"%":"Bon plan")},
             'badge_color'  => 'danger',
             'stock_status' => 1,
         ],`).join("\n");
@@ -329,7 +377,23 @@ ${items}
     wp_die( count( $products ) . ' offres importées. Pensez à supprimer ce snippet.', 'Import terminé', [ 'response' => 200 ] );
 } );
 `;
-  download(`import-domadoo-content-egg-${stamp()}.php`,php,"text/plain;charset=utf-8"); });
+  download(`import-${SOURCE}-content-egg-${stamp()}.php`,php,"text/plain;charset=utf-8"); });
+
+/* ---------- choix de la boutique ---------- */
+const CACHE_BY_SRC = {};
+function setSource(src, silent){
+  if(ALL.length) CACHE_BY_SRC[SOURCE] = {ALL, CURRENT};
+  SOURCE = src; SHOP = SRC().shop; localStorage.setItem("bpd_source", src);
+  document.body.classList.toggle("src-amazon", src==="amazon");
+  document.querySelectorAll(".srcsw button").forEach(b=>b.classList.toggle("on", b.dataset.src===src));
+  document.title = `Bons plans ${SHOP} – Technoseb27`;
+  if(silent) return;
+  const c = CACHE_BY_SRC[src];
+  if(c){ ALL=c.ALL; CURRENT=c.CURRENT; render(); $("#status").textContent=`Boutique : ${SHOP}. Cliquez sur « Rafraîchir » pour de nouvelles offres.`; }
+  else { ALL=[]; CURRENT=[]; $("#list").innerHTML=`<div class="empty"><strong>${SHOP}</strong>Cliquez sur « Rafraîchir » pour charger les offres.</div>`; updateSel(); $("#status").textContent=`Boutique : ${SHOP}.`; }
+}
+document.querySelectorAll(".srcsw button").forEach(b=>b.addEventListener("click",()=>{ if(b.dataset.src!==SOURCE) setSource(b.dataset.src); }));
+setSource(SOURCE, true);
 
 /* ---------- mises à jour ---------- */
 async function checkUpdate(manual){

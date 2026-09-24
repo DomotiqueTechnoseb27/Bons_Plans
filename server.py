@@ -681,6 +681,199 @@ def scan_webkit():
         shutil.rmtree(out, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- source Amazon (deals repérés sur Dealabs)
+import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
+
+DEALABS_GROUPS = [("high-tech", "High-tech"), ("smartphones", "Smartphones"),
+                  ("tablettes", "Tablettes"), ("smart-home", "Domotique")]
+NS = {"pepper": "http://www.pepper.com/rss", "media": "http://search.yahoo.com/mrss/"}
+ASIN_RE = re.compile(r"(?:/dp/|/gp/product/|/gp/aw/d/|/exec/obidos/ASIN/|[?&]asin=|ASIN\s*:?\s*(?:</strong>)?\s*)"
+                     r"([A-Z0-9]{10})(?![A-Z0-9])")
+AMZ_LINK_RE = re.compile(r'href="(https?://(?:www\.)?(?:amazon\.fr|amzn\.to|amzn\.eu)[^"]+)"', re.I)
+KEYWORDS = [
+    ("Smartphones", r"smartphone|iphone|galaxy [asz]\d|galaxy z|pixel \d|redmi|poco |oneplus|t[ée]l[ée]phone portable|motorola|nothing phone"),
+    ("Tablettes", r"tablette|ipad|galaxy tab|xiaomi pad|lenovo tab|kindle|liseuse"),
+    ("Domotique", r"domotique|connect[ée]e?s?\b|zigbee|matter|thread|alexa|echo (dot|show|pop|hub)|google (home|nest)|nest |"
+                  r"philips hue|\bhue\b|tapo|ring |netatmo|eufy|aqara|sonoff|shelly|tuya|meross|switchbot|somfy|"
+                  r"cam[ée]ra (de surveillance|ip|wi-?fi)|sonnette|serrure|thermostat|ampoule|prise (connect|intelligente)|robot aspirateur"),
+]
+ASIN_CACHE_FILE = os.path.join(SUPPORT_DIR, "asin-cache.json")
+_asin_lock = threading.Lock()
+
+
+def load_asin_cache():
+    try:
+        with open(ASIN_CACHE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_asin_cache(c):
+    try:
+        os.makedirs(SUPPORT_DIR, exist_ok=True)
+        if len(c) > 5000:
+            c = dict(list(c.items())[-4000:])
+        with open(ASIN_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(c, f)
+    except OSError:
+        pass
+
+
+def follow(url):
+    """Suit les redirections et renvoie tous les en-têtes + l'adresse finale (sans télécharger la page)."""
+    curl = shutil.which("curl") or "/usr/bin/curl"
+    r = subprocess.run([curl, "-sL", "--max-time", "20", "--max-redirs", "10", "-o", "/dev/null", "-D", "-",
+                        "-A", UA, "-H", "Accept-Language: fr-FR,fr;q=0.9", "-w", "\n__FINAL__%{url_effective}", url],
+                       capture_output=True, timeout=30)
+    return r.stdout.decode("utf-8", "replace")
+
+
+def find_asin(text):
+    m = ASIN_RE.search(text or "")
+    return m.group(1).upper() if m else None
+
+
+def resolve_asin(deal):
+    asin = find_asin(deal.get("_desc", ""))
+    if asin:
+        return asin
+    for link in AMZ_LINK_RE.findall(deal.get("_desc", ""))[:2]:
+        asin = find_asin(follow(html.unescape(link)))
+        if asin:
+            return asin
+    for kind in ("threadmain", "thread"):
+        try:
+            asin = find_asin(follow(f"https://www.dealabs.com/visit/{kind}/{deal['id']}"))
+        except Exception:  # noqa
+            asin = None
+        if asin:
+            return asin
+    return None
+
+
+GENERIC_WORDS = set("""smartphone smartphones tablette tablettes ampoule ampoules friteuse casque écouteurs ecouteurs montre
+caméra camera enceinte prise prises pack lot kit écran ecran tv téléviseur televiseur manette clavier souris chargeur câble cable
+batterie robot aspirateur disque ssd carte routeur box thermostat sonnette serrure capteur station lampe ordinateur pc portable
+sans de du la le les et un une des pour avec x2 x3 x4 nouveau nouvelle mini micro vidéoprojecteur videoprojecteur imprimante
+barre son détecteur detecteur interrupteur module hub passerelle tondeuse drone appareil photo moniteur cle clé usb""".split())
+
+
+def guess_brand(title):
+    for w in re.findall(r"[A-ZÀ-Ý][\w&'.-]*", title):
+        if len(w) > 1 and w.lower() not in GENERIC_WORDS and not re.search(r"\d", w):
+            return w.strip(".'-").title()
+    return ""
+
+
+def rubrique_for(title, group_label):
+    for label, pattern in KEYWORDS:
+        if re.search(pattern, title, re.I):
+            return label
+    return group_label
+
+
+def parse_rss(txt, group_label, now_label):
+    out = []
+    root = ET.fromstring(txt.encode("utf-8"))
+    for it in root.iter("item"):
+        merch = it.find("pepper:merchant", NS)
+        name = merch.get("name", "") if merch is not None else ""
+        if "amazon" not in name.lower():
+            continue
+        link = (it.findtext("link") or "").strip()
+        m = re.search(r"-(\d+)$", link)
+        if not m:
+            continue
+        price = parse_price(merch.get("price")) if merch is not None else None
+        if not price:
+            continue
+        title = re.sub(r"^\s*(\[[^\]]*\]\s*)+", "", html.unescape(it.findtext("title") or "")).strip()
+        desc = it.findtext("description") or ""
+        old = None
+        mo = re.search(r"au lieu de\s*(\d[\d\s.,]*)\s*€", strip_tags(desc), re.I)
+        if mo:
+            old = parse_price(mo.group(1))
+            if not old or old <= price:
+                old = None
+        out.append({
+            "id": "amz-" + m.group(1), "source": "amazon", "title": title, "url": link,
+            "price": price, "old": old, "pct": round((1 - price / old) * 100) if old else 0,
+            "brand": guess_brand(title),
+            "rubrique": rubrique_for(title, group_label), "category": it.findtext("category") or "",
+            "stock": "", "desc": "", "seen_at": now_label, "_desc": desc,
+        })
+    return out
+
+
+def fetch_rss(slug):
+    last = ""
+    for url in (f"https://www.dealabs.com/rss/groupe/{slug}", f"https://www.dealabs.com/groupe/{slug}/rss"):
+        try:
+            txt = fetch(url)
+        except Exception as e:  # noqa
+            log(f"RSS {url} : {e}")
+            continue
+        if "<rss" in txt[:1000]:
+            return txt
+        last = txt
+    save_debug(f"rss-{slug}.txt", last[:100000])
+    return None
+
+
+def scan_amazon():
+    now_label = datetime.now().strftime("%d/%m/%Y à %H:%M")
+    deals, seen, groups_ok = [], set(), []
+    for slug, label in DEALABS_GROUPS:
+        txt = fetch_rss(slug)
+        if not txt:
+            log(f"Groupe Dealabs « {slug} » illisible")
+            continue
+        try:
+            items = parse_rss(txt, label, now_label)
+        except ET.ParseError as e:
+            log(f"RSS {slug} mal formé : {e}")
+            continue
+        groups_ok.append(label)
+        for d in items:
+            if d["id"] not in seen:
+                seen.add(d["id"])
+                deals.append(d)
+        time.sleep(0.4)
+    if not groups_ok:
+        raise RuntimeError("Aucun flux Dealabs n'a pu être lu (détails dans ~/Library/Logs/BonsPlansDomadoo).")
+    with _asin_lock:
+        cache = load_asin_cache()
+    todo = [d for d in deals if d["id"] not in cache]
+
+    def work(d):
+        try:
+            return d["id"], resolve_asin(d)
+        except Exception as e:  # noqa
+            log(f"ASIN {d['id']} : {e}")
+            return d["id"], None
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for did, asin in ex.map(work, todo[:120]):
+            if asin:
+                cache[did] = asin
+    with _asin_lock:
+        save_asin_cache(cache)
+    products, missing = [], 0
+    for d in deals:
+        d.pop("_desc", None)
+        asin = cache.get(d["id"])
+        if not asin:
+            missing += 1
+            continue
+        d["asin"] = asin
+        products.append(d)
+    log(f"Amazon via Dealabs : {len(products)} deals ({missing} sans lien Amazon identifiable), groupes {groups_ok}")
+    return {"ok": True, "products": products, "missing": missing, "groups": groups_ok, "mode": "dealabs",
+            "scanned_at": datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+
 _preferred = None  # mémorise la méthode qui a fonctionné
 
 
@@ -705,12 +898,16 @@ def scan():
     raise RuntimeError(" · ".join(f"{labels[n]} : {e}" for n, e in errors))
 
 
-def get_scan(force=False):
+_caches = {}
+
+
+def get_scan(force=False, source="domadoo"):
     with _lock:
-        if not force and _cache["data"] and time.time() - _cache["at"] < CACHE_SECONDS:
-            return dict(_cache["data"], cached=True)
-        data = scan()
-        _cache.update(at=time.time(), data=data)
+        c = _caches.get(source)
+        if not force and c and time.time() - c["at"] < CACHE_SECONDS:
+            return dict(c["data"], cached=True)
+        data = scan_amazon() if source == "amazon" else scan()
+        _caches[source] = {"at": time.time(), "data": data}
         return dict(data, cached=False)
 
 
@@ -738,9 +935,11 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/ping":
             return self.send(200, json.dumps({"app": "bons-plans-domadoo"}))
         if u.path == "/api/scan":
-            force = parse_qs(u.query).get("force", ["0"])[0] == "1"
+            q = parse_qs(u.query)
+            force = q.get("force", ["0"])[0] == "1"
+            source = q.get("source", ["domadoo"])[0]
             try:
-                return self.send(200, json.dumps(get_scan(force), ensure_ascii=False))
+                return self.send(200, json.dumps(get_scan(force, source), ensure_ascii=False))
             except Exception as e:
                 log(f"Erreur d'analyse : {e}")
                 return self.send(200, json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
