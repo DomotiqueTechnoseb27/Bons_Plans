@@ -1,8 +1,8 @@
 {
-  "version": "1.2.0",
-  "notes": "Lecture sans Safari (moteur WebKit intégré) et arrêt automatique des anciens exemplaires",
+  "version": "1.2.3",
+  "notes": "Relance fiable de l’application, plus besoin du Terminal",
   "files": {
-    "server.py": "977d4b3555ce870dbfa14e0bb70eadc2fcd60f897b7edcb96acb9398738d8aa1",
-    "index.html": "cf119f2d04741ff702dfecfac47b71aa01c22f95074967e8948eb5a762375876"
+    "server.py": "77e679615f07f36194ef08064028a902673830cf75840a53e8ebc4276402531c",
+    "index.html": "e2fab189b4c31afaada7f9d559b65e9827c1ec08c46b589988213fa48369842a"
   }
 }

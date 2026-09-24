@@ -78,6 +78,7 @@ main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,min
     </select></label>
   <label><input type="checkbox" id="optAcc" checked> Exclure câbles, plaques, adaptateurs…</label>
   <label><input type="checkbox" id="optOrderOnly"> Exclure « Sur commande »</label>
+  <label><input type="checkbox" id="optRefurb" checked> Exclure les reconditionnés</label>
   <label>Identifiant affilié <input type="number" id="optDomid" value="8" style="width:56px"></label>
 </div>
 
@@ -100,10 +101,11 @@ const $ = s => document.querySelector(s);
 let ALL = [], CURRENT = [];
 const SEEN = new Set(JSON.parse(localStorage.getItem("bpd_seen") || "[]"));
 const saveSeen = () => localStorage.setItem("bpd_seen", JSON.stringify([...SEEN].slice(-3000)));
+const REFURB_RE = /reconditionn|refurb|occasion|seconde[ -]main|\bgrade [a-d]\b|\bremis? à neuf|\bB-?stock\b/i;
 const ACC_RE = /c[âa]ble|plaque de finition|adaptateur|badge rfid|bouton avec guide|cadre de|support mural|antenne|connecteur|pile |piles |vis |fixation/i;
 
 /* ---------- options mémorisées ---------- */
-const OPTS = ["optCount","optMin","optBrand","optOrder","optAcc","optOrderOnly","optDomid"];
+const OPTS = ["optCount","optMin","optBrand","optOrder","optAcc","optOrderOnly","optRefurb","optDomid"];
 function loadOpts(){ const o = JSON.parse(localStorage.getItem("bpd_opts")||"{}");
   OPTS.forEach(id=>{ if(o[id]===undefined) return; const el=$("#"+id); el.type==="checkbox"?el.checked=o[id]:el.value=o[id]; }); }
 function saveOpts(){ const o={}; OPTS.forEach(id=>{const el=$("#"+id); o[id]=el.type==="checkbox"?el.checked:el.value;}); localStorage.setItem("bpd_opts",JSON.stringify(o)); }
@@ -118,7 +120,8 @@ function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show"
 function affLink(url){ const id=String($("#optDomid").value||"8").trim();
   let u=url.replace(/([?&])domid=[^&]*&?/,"$1").replace(/[?&]$/,""); return u+(u.includes("?")?"&":"?")+"domid="+id; }
 const imgOf = p => p.img_large || p.img;
-const today = () => new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"});
+const SHOP = "Domadoo";  // boutique concernée (préparé pour l'ajout de Zigbuy)
+const today = () => new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}).replace(/^1 /,"1er ");
 
 /* ---------- texte de promotion ---------- */
 function promoText(p){
@@ -137,8 +140,10 @@ function promoText(p){
 
 /* ---------- sélection ---------- */
 function eligible(){
-  const min=+$("#optMin").value||0, acc=$("#optAcc").checked, noOrder=$("#optOrderOnly").checked;
-  return ALL.filter(p=>p.pct>=min && !(acc && ACC_RE.test(p.title)) && !(noOrder && /Sur commande/i.test(p.stock)) && !/Rupture|Épuisé/i.test(p.stock));
+  const min=+$("#optMin").value||0, acc=$("#optAcc").checked, noOrder=$("#optOrderOnly").checked, noRefurb=$("#optRefurb").checked;
+  return ALL.filter(p=>p.pct>=min && !(acc && ACC_RE.test(p.title)) && !(noOrder && /Sur commande/i.test(p.stock))
+    && !(noRefurb && (REFURB_RE.test(p.title) || REFURB_RE.test(p.url)))
+    && !/Rupture|Épuisé/i.test(p.stock));
 }
 function order(list){
   const o=$("#optOrder").value;
@@ -261,7 +266,7 @@ function articleHtml(){
 </div>`;}).join("");
   return `<!-- ===== Début du bloc Bons plans Domadoo ===== -->
 <div class="tsd-promos" style="max-width:820px;margin:0 auto;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<h2 style="font-size:26px;color:#14303d;margin:0 0 12px;">Bons plans domotique : ${items.length} produits en promotion chez Domadoo</h2>
+<h2 style="font-size:26px;color:#14303d;margin:0 0 12px;">Bons plans ${SHOP} du ${today()} : ${items.length} produits domotique en promotion</h2>
 <p style="font-size:16px;line-height:1.6;color:#2b3a44;">Domadoo, la boutique française spécialisée en domotique, propose en ce moment de nombreuses promotions. J'ai sélectionné pour vous ${items.length} offres intéressantes pour une maison connectée, avec des remises allant jusqu'à -${max} %.</p>
 <p style="font-size:16px;line-height:1.6;color:#2b3a44;">Les stocks sont parfois limités et les prix peuvent évoluer à tout moment : ne tardez pas si un produit vous intéresse.</p>
 <p style="font-size:13px;line-height:1.5;color:#5a6b78;background:#f1f5f7;padding:10px 12px;border-radius:5px;margin:0 0 22px;">Les liens de cet article sont des liens affiliés : si vous passez commande via ces liens, Domotique Technoseb27 perçoit une petite commission, sans aucun surcoût pour vous. Merci pour votre soutien ! Prix relevés le ${today()}.</p>
@@ -274,7 +279,7 @@ ${cards}
 $("#btnCopyHtml").addEventListener("click",()=>{ if(need()) copy(articleHtml()); });
 $("#btnPreview").addEventListener("click",()=>{ if(!need()) return;
   const w=window.open("","_blank"); if(!w){toast("Autorisez l'ouverture de fenêtres pour l'aperçu.");return;}
-  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Bons plans Domadoo – ${today()}</title>
+  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Bons plans ${SHOP} du ${today()}</title>
   <style>body{background:#f4f7f9;padding:24px 12px;margin:0}.bar{max-width:820px;margin:0 auto 16px;display:flex;gap:10px;justify-content:flex-end}
   .bar button{font:15px -apple-system,sans-serif;padding:9px 16px;border-radius:6px;border:0;background:#0f6e8c;color:#fff;cursor:pointer}
   @media print{.bar{display:none}body{background:#fff;padding:0}.tsd-card{break-inside:avoid}}</style></head>

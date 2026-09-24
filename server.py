@@ -819,7 +819,20 @@ def free_port():
     return True
 
 
+def detach():
+    """Relance le serveur dans une session indépendante et rend la main tout de suite.
+    macOS considère alors l'application comme terminée : un nouveau double-clic sur l'icône
+    rouvre simplement la page au lieu de ne rien faire."""
+    env = dict(os.environ, BPD_DETACHED="1")
+    with open(os.devnull, "rb") as dn_in, open(os.devnull, "wb") as dn_out:
+        subprocess.Popen([sys.executable, os.path.abspath(__file__)], env=env, stdin=dn_in,
+                         stdout=dn_out, stderr=dn_out, start_new_session=True, close_fds=True)
+
+
 def main():
+    if sys.platform == "darwin" and os.environ.get("BPD_DETACHED") != "1" and os.environ.get("BPD_NO_DETACH") != "1":
+        detach()
+        return
     server = None
     for attempt in range(2):
         try:
