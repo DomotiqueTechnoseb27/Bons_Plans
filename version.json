@@ -1,8 +1,8 @@
 {
-  "version": "1.5.1",
-  "notes": "Photo modifiable sur les fiches Amazon",
+  "version": "1.5.2",
+  "notes": "Photos Dealabs sur les fiches Amazon",
   "files": {
-    "server.py": "c845487b9fa0fe74ecf3062c93ded0f31999ec2915ae6ef79b5933827506f5ff",
-    "index.html": "a65aa0d865b296b85b3d3347761ab8311519707eea32416b68e491e36cfcb690"
+    "server.py": "5694eb4d604c2a0385fafff00185cc721a96bdfa6366d2ced10078d12b4deeec",
+    "index.html": "06ffb031f3855b172dd417e1aafda065912dcd5ebdc3100222624bf536fb4aa6"
   }
 }
