@@ -803,6 +803,15 @@ def rubrique_for(title, group_label):
     return group_label
 
 
+def deal_image(it):
+    """Photo du deal publiée dans le flux Dealabs (balise media:content)."""
+    m = it.find("media:content", NS)
+    url = (m.get("url") if m is not None else "") or ""
+    if not url.startswith("http"):
+        return ""
+    return url
+
+
 def parse_rss(txt, group_label, now_label):
     out = []
     root = ET.fromstring(txt.encode("utf-8"))
@@ -831,7 +840,7 @@ def parse_rss(txt, group_label, now_label):
             "price": price, "old": old, "pct": round((1 - price / old) * 100) if old else 0,
             "brand": guess_brand(title),
             "rubrique": rubrique_for(title, group_label), "category": it.findtext("category") or "",
-            "stock": "", "desc": "", "seen_at": now_label, "_desc": desc,
+            "stock": "", "desc": "", "seen_at": now_label, "_desc": desc, "deal_img": deal_image(it),
         })
     return out
 
