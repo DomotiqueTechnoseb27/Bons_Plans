@@ -45,8 +45,14 @@ main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,min
 .srcsw{display:inline-flex;border:1px solid #46626f;border-radius:7px;overflow:hidden}
 .srcsw button{border:0;border-radius:0;background:transparent;color:#dbe7ec;padding:7px 14px;font-weight:600}
 .srcsw button.on{background:#fff;color:var(--ink)}
-.only-amazon{display:none}.src-amazon .only-amazon{display:flex}.src-amazon .only-domadoo{display:none}
+body:not(.src-amazon) .only-amazon{display:none!important}.src-amazon .only-domadoo{display:none!important}
 .stamp{font-size:12px;color:var(--muted)}
+.article-box{background:#fff;border-bottom:1px solid var(--line);padding:12px 24px;display:grid;grid-template-columns:150px 1fr;gap:8px 12px;align-items:start}
+.article-box label{font-size:14px;color:var(--ink);padding-top:6px}
+.article-box input[type=text],.article-box textarea{width:100%;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:5px;padding:6px 8px;color:var(--text)}
+.article-box textarea{min-height:64px;resize:vertical}
+.article-box .hint{grid-column:2;font-size:12.5px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+@media (max-width:600px){.article-box{grid-template-columns:1fr}.article-box .hint{grid-column:1}}
 .empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)}
 .empty strong{display:block;font-size:18px;color:var(--ink);margin-bottom:6px}
 .error{grid-column:1/-1;background:#fff3ef;border:1px solid #f2c2b2;color:#8a2c10;padding:14px 16px;border-radius:6px}
@@ -95,6 +101,18 @@ main{padding:0 24px 40px;display:grid;grid-template-columns:repeat(auto-fill,min
   <label class="only-amazon">Tag Amazon <input type="text" id="optTag" value="ladomdetec-21" style="width:130px;padding:5px 6px;border:1px solid var(--line);border-radius:5px;font:inherit"></label>
 </div>
 
+<div class="article-box">
+  <label for="artTitle">Titre de l'article</label>
+  <input type="text" id="artTitle" autocomplete="off">
+  <label for="artIntro">Texte sous le titre</label>
+  <textarea id="artIntro" placeholder="Facultatif : votre texte, affiché juste en dessous du titre. Une ligne vide crée un nouveau paragraphe."></textarea>
+  <div class="hint">
+    <span>Titre vide = titre automatique. Raccourcis possibles : {boutique}, {date}, {nombre}.</span>
+    <button type="button" class="linkbtn" id="btnTitleReset">Revenir au titre automatique</button>
+    <label style="padding:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="optNoToc" checked> Pas de sommaire automatique (TOC+)</label>
+  </div>
+</div>
+
 <div class="exports">
   <span class="sel" id="selInfo"></span>
   <button id="btnCopyHtml" class="primary">Copier le HTML pour WordPress</button>
@@ -134,7 +152,7 @@ const REFURB_RE = /reconditionn|refurb|occasion|seconde[ -]main|\bgrade [a-d]\b|
 const ACC_RE = /c[âa]ble|plaque de finition|adaptateur|badge rfid|bouton avec guide|cadre de|support mural|antenne|connecteur|pile |piles |vis |fixation/i;
 
 /* ---------- options mémorisées ---------- */
-const OPTS = ["optCount","optMin","optBrand","optOrder","optAcc","optOrderOnly","optRefurb","optDomid","rPhone","rTab","rHome","rTech","optTag","optGone"];
+const OPTS = ["optCount","optMin","optBrand","optOrder","optAcc","optOrderOnly","optRefurb","optDomid","rPhone","rTab","rHome","rTech","optTag","optGone","optNoToc"];
 function loadOpts(){ const o = JSON.parse(localStorage.getItem("bpd_opts")||"{}");
   OPTS.forEach(id=>{ if(o[id]===undefined) return; const el=$("#"+id); el.type==="checkbox"?el.checked=o[id]:el.value=o[id]; }); }
 function saveOpts(){ const o={}; OPTS.forEach(id=>{const el=$("#"+id); o[id]=el.type==="checkbox"?el.checked:el.value;}); localStorage.setItem("bpd_opts",JSON.stringify(o)); }
@@ -275,7 +293,7 @@ function render(){
   </article>`).join("");
   updateSel();
 }
-function updateSel(){ const n=CURRENT.filter(p=>p.on).length; $("#selInfo").textContent = CURRENT.length?`${n} produit(s) retenu(s) sur ${CURRENT.length} proposés · ${eligible().length} promos correspondent aux filtres`:""; }
+function updateSel(){ try{refreshTitlePlaceholder();}catch{}  const n=CURRENT.filter(p=>p.on).length; $("#selInfo").textContent = CURRENT.length?`${n} produit(s) retenu(s) sur ${CURRENT.length} proposés · ${eligible().length} promos correspondent aux filtres`:""; }
 
 $("#list").addEventListener("input",e=>{ if(e.target.matches("textarea")) CURRENT[+e.target.dataset.i].text=e.target.value; });
 $("#list").addEventListener("change",e=>{ const i=e.target.dataset.on; if(i!==undefined){CURRENT[+i].on=e.target.checked; e.target.closest(".card").classList.toggle("off",!e.target.checked); updateSel();} });
@@ -318,6 +336,29 @@ async function copy(txt){ try{await navigator.clipboard.writeText(txt);toast("Co
 function download(name,content,type){ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
 const stamp=()=>new Date().toISOString().slice(0,10);
 
+/* ---------- titre et texte personnalisés (mémorisés par boutique) ---------- */
+function autoTitle(n){ return `Bons plans ${SHOP} du ${today()} : ${n} produit${n>1?"s":""} ${SRC().theme} en promotion`; }
+function articleTitle(n){
+  const t=$("#artTitle").value.trim();
+  if(!t) return autoTitle(n);
+  return t.replace(/\{boutique\}/gi,SHOP).replace(/\{date\}/gi,today()).replace(/\{nombre\}/gi,String(n));
+}
+function introHtml(){
+  const t=$("#artIntro").value.trim();
+  if(!t) return "";
+  return t.split(/\n\s*\n/).map(par=>`<p style="font-size:16px;line-height:1.6;color:#2b3a44;">${esc(par.trim()).replace(/\n/g,"<br>")}</p>`).join("\n");
+}
+function refreshTitlePlaceholder(){ $("#artTitle").placeholder = autoTitle(chosen().length || 0); }
+function loadArticleFields(){
+  let d={}; try{ d=JSON.parse(localStorage.getItem("bpd_article_"+SOURCE)||"{}"); }catch{}
+  $("#artTitle").value=d.title||""; $("#artIntro").value=d.intro||""; refreshTitlePlaceholder();
+}
+function saveArticleFields(){
+  try{ localStorage.setItem("bpd_article_"+SOURCE, JSON.stringify({title:$("#artTitle").value, intro:$("#artIntro").value})); }catch{}
+}
+["#artTitle","#artIntro"].forEach(id=>$(id).addEventListener("input",saveArticleFields));
+$("#btnTitleReset").addEventListener("click",()=>{ $("#artTitle").value=""; saveArticleFields(); refreshTitlePlaceholder(); });
+
 function articleHtml(){
   const items=chosen(), max=Math.max(0,...items.map(p=>p.pct)), amz=SOURCE==="amazon";
   const cards=items.map(p=>{ const l=esc(affLink(p)); return `
@@ -332,7 +373,8 @@ function articleHtml(){
 </div>`;}).join("");
   return `<!-- ===== Début du bloc Bons plans ${SHOP} ===== -->
 <div class="tsd-promos" style="max-width:820px;margin:0 auto;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<h2 style="font-size:26px;color:#14303d;margin:0 0 12px;">Bons plans ${SHOP} du ${today()} : ${items.length} produit${items.length>1?"s":""} ${SRC().theme} en promotion</h2>
+${$("#optNoToc").checked?"[no_toc]\n":""}<h2 style="font-size:26px;color:#14303d;margin:0 0 12px;">${esc(articleTitle(items.length))}</h2>
+${introHtml()}
 <p style="font-size:16px;line-height:1.6;color:#2b3a44;">${amz
   ? `Voici ${items.length} bons plans high-tech repérés sur Amazon : smartphones, tablettes, domotique et objets connectés à prix réduit.`
   : `Domadoo, la boutique française spécialisée en domotique, propose en ce moment de nombreuses promotions. J'ai sélectionné pour vous ${items.length} offres intéressantes pour une maison connectée, avec des remises allant jusqu'à -${max} %.`}</p>
@@ -347,11 +389,11 @@ ${cards}
 $("#btnCopyHtml").addEventListener("click",()=>{ if(need()) copy(articleHtml()); });
 $("#btnPreview").addEventListener("click",()=>{ if(!need()) return;
   const w=window.open("","_blank"); if(!w){toast("Autorisez l'ouverture de fenêtres pour l'aperçu.");return;}
-  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Bons plans ${SHOP} du ${today()}</title>
+  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${esc(articleTitle(chosen().length))}</title>
   <style>body{background:#f4f7f9;padding:24px 12px;margin:0}.bar{max-width:820px;margin:0 auto 16px;display:flex;gap:10px;justify-content:flex-end}
   .bar button{font:15px -apple-system,sans-serif;padding:9px 16px;border-radius:6px;border:0;background:#0f6e8c;color:#fff;cursor:pointer}
   @media print{.bar{display:none}body{background:#fff;padding:0}.tsd-card{break-inside:avoid}}</style></head>
-  <body><div class="bar"><button onclick="window.print()">Enregistrer en PDF</button></div>${articleHtml()}</body></html>`);
+  <body><div class="bar"><button onclick="window.print()">Enregistrer en PDF</button></div>${articleHtml().replace("[no_toc]\n","")}</body></html>`);
   w.document.close(); });
 $("#btnCsv").addEventListener("click",()=>{ if(!need()) return;
   const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
@@ -407,6 +449,7 @@ function setSource(src, silent){
   document.body.classList.toggle("src-amazon", src==="amazon");
   document.querySelectorAll(".srcsw button").forEach(b=>b.classList.toggle("on", b.dataset.src===src));
   document.title = `Bons plans ${SHOP} – Technoseb27`;
+  loadArticleFields();
   if(silent) return;
   const c = CACHE_BY_SRC[src];
   if(c){ ALL=c.ALL; CURRENT=c.CURRENT; render(); $("#status").textContent=`Boutique : ${SHOP}. Cliquez sur « Rafraîchir » pour de nouvelles offres.`; }
