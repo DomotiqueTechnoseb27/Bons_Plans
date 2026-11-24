@@ -1,8 +1,8 @@
 {
-  "version": "1.5.0",
-  "notes": "Titre et texte personnalisables, option sans sommaire TOC+",
+  "version": "1.5.1",
+  "notes": "Photo modifiable sur les fiches Amazon",
   "files": {
     "server.py": "c845487b9fa0fe74ecf3062c93ded0f31999ec2915ae6ef79b5933827506f5ff",
-    "index.html": "129d11b6578365eb7fbc453bd2562a99d78123449ac433a8fb06d4aa155a83b5"
+    "index.html": "a65aa0d865b296b85b3d3347761ab8311519707eea32416b68e491e36cfcb690"
   }
 }
