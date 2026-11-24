@@ -179,7 +179,25 @@ function affLink(p){
   let u=p.url.replace(/([?&])domid=[^&]*&?/,"$1").replace(/[?&]$/,""); return u+(u.includes("?")?"&":"?")+"domid="+id; }
 // Amazon : lien image au format SiteStripe (outil officiel Amazon Partenaires)
 // Amazon : photo officielle fournie par la Creators API (vide si l'API n'est pas configurée)
-const imgOf = p => isAmz(p) ? (p.img || "") : (p.img_large || p.img);
+/* ---------- photos saisies à la main (mémorisées par produit) ---------- */
+let PHOTOS = {}; try{ PHOTOS = JSON.parse(localStorage.getItem("bpd_photos")||"{}"); }catch{}
+const photoKey = p => isAmz(p) ? "asin:"+p.asin : "id:"+p.id;
+const BLOCKED_IMG = /(^|\.)(amazon\.[a-z.]+|media-amazon\.com|ssl-images-amazon\.com|images-amazon\.com|amazon-adsystem\.com|dealabs\.com|pepper\.com)(\/|$|:)/i;
+function setPhoto(p, url){
+  url = (url||"").trim();
+  if(url && !/^https?:\/\//i.test(url)) return "L'adresse doit commencer par https://";
+  if(url){ let host=""; try{ host=new URL(url).hostname; }catch{ return "Adresse d'image invalide."; }
+    if(BLOCKED_IMG.test(host)) return "Image refusée : les règles Amazon Partenaires interdisent de reprendre les images d'Amazon (ou de Dealabs) hors de leurs outils officiels. Prenez une photo du site du fabricant ou l'une des vôtres."; }
+  if(url) PHOTOS[photoKey(p)] = url; else delete PHOTOS[photoKey(p)];
+  try{ localStorage.setItem("bpd_photos", JSON.stringify(PHOTOS)); }catch{}
+  return "";
+}
+// Photo saisie à la main en priorité, sinon photo officielle (API Amazon) ou photo Domadoo
+const imgOf = p => PHOTOS[photoKey(p)] || (isAmz(p) ? (p.img || "") : (p.img_large || p.img));
+function photoSearchUrl(p){
+  const q = p.title.replace(/\([^)]*\)/g," ").replace(/\b(lot de \d+|via coupon|vendeur tiers|prime|occasion)\b/gi," ").replace(/\s+/g," ").trim();
+  return "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(q + " -amazon");
+}
 let SHOP = SRC().shop;
 const today = () => new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}).replace(/^1 /,"1er ");
 
@@ -274,7 +292,7 @@ function render(){
   if(!CURRENT.length){ list.innerHTML=`<div class="empty"><strong>Aucun produit ne correspond aux filtres</strong>Baissez la remise minimale ou décochez une exclusion.</div>`; updateSel(); return; }
   list.innerHTML=CURRENT.map((p,i)=>`
   <article class="card ${p.on?"":"off"}" data-i="${i}">
-    <a href="${esc(affLink(p))}" target="_blank" rel="noopener">${imgOf(p)?`<img src="${esc(imgOf(p))}" alt="" referrerpolicy="no-referrer" loading="lazy">`:`<div class="small" style="width:120px;height:120px;display:flex;align-items:center;justify-content:center;text-align:center;background:#f3f6f8;border-radius:4px;padding:6px">${photoHint()}</div>`}</a>
+    <a href="${esc(affLink(p))}" target="_blank" rel="noopener">${imgOf(p)?`<img src="${esc(imgOf(p))}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'small',textContent:'Image introuvable : vérifiez l’adresse',style:'width:120px;height:120px;display:flex;align-items:center;justify-content:center;text-align:center;background:#fff3ef;border-radius:4px;padding:6px'}))">`:`<div class="small" style="width:120px;height:120px;display:flex;align-items:center;justify-content:center;text-align:center;background:#f3f6f8;border-radius:4px;padding:6px">${photoHint()}</div>`}</a>
     <div>
       <div class="meta"><span>${esc(p.brand)}</span>${isAmz(p)?`<a href="${esc(p.url)}" target="_blank" rel="noopener" class="small">voir le deal Dealabs</a>`:""}${p.stock?`<span class="${/Derniers/i.test(p.stock)?"stock-limit":""}">${esc(p.stock)}</span>`:""}</div>
       <h3>${esc(p.title)}</h3>
@@ -282,8 +300,11 @@ function render(){
       <textarea data-i="${i}" aria-label="Texte de promotion">${esc(p.text)}</textarea>
       <div class="links">
         <span>Lien</span><input readonly value="${esc(affLink(p))}"><button data-copy="link" data-i="${i}">Copier</button>
-        <span>Photo</span><input readonly value="${esc(imgOf(p))}"><button data-copy="img" data-i="${i}">Copier</button>
+        ${isAmz(p)
+          ? `<span>Photo</span><input data-photo="${i}" value="${esc(imgOf(p))}" placeholder="Collez ici l'adresse d'une image (site du fabricant, vos photos…)" style="color:var(--text);background:#fff"><button data-search="${i}" title="Chercher une photo du produit">Chercher</button>`
+          : `<span>Photo</span><input readonly value="${esc(imgOf(p))}"><button data-copy="img" data-i="${i}">Copier</button>`}
       </div>
+      <div class="small" data-photomsg="${i}" style="color:#8a2c10"></div>
     </div>
     <div class="actions">
       <label><input type="checkbox" data-on="${i}" ${p.on?"checked":""}> Inclure dans l'article</label>
@@ -296,10 +317,17 @@ function render(){
 function updateSel(){ try{refreshTitlePlaceholder();}catch{}  const n=CURRENT.filter(p=>p.on).length; $("#selInfo").textContent = CURRENT.length?`${n} produit(s) retenu(s) sur ${CURRENT.length} proposés · ${eligible().length} promos correspondent aux filtres`:""; }
 
 $("#list").addEventListener("input",e=>{ if(e.target.matches("textarea")) CURRENT[+e.target.dataset.i].text=e.target.value; });
-$("#list").addEventListener("change",e=>{ const i=e.target.dataset.on; if(i!==undefined){CURRENT[+i].on=e.target.checked; e.target.closest(".card").classList.toggle("off",!e.target.checked); updateSel();} });
+$("#list").addEventListener("change",e=>{
+  if(e.target.dataset.photo!==undefined){
+    const i=+e.target.dataset.photo, err=setPhoto(CURRENT[i], e.target.value);
+    if(err){ const m=document.querySelector(`[data-photomsg="${i}"]`); m.textContent=err; e.target.value=imgOf(CURRENT[i]); return; }
+    render(); toast(e.target.value.trim()?"Photo enregistrée pour ce produit":"Photo retirée"); return;
+  }
+  const i=e.target.dataset.on; if(i!==undefined){CURRENT[+i].on=e.target.checked; e.target.closest(".card").classList.toggle("off",!e.target.checked); updateSel();} });
 $("#list").addEventListener("click",e=>{
   const b=e.target.closest("button"); if(!b) return;
   if(b.dataset.copy){ const p=CURRENT[+b.dataset.i]; copy(b.dataset.copy==="link"?affLink(p):imgOf(p)); }
+  if(b.dataset.search!==undefined) window.open(photoSearchUrl(CURRENT[+b.dataset.search]),"_blank","noopener");
   if(b.dataset.replace!==undefined) replaceOne(+b.dataset.replace);
   if(b.dataset.regen!==undefined){ const i=+b.dataset.regen, p=CURRENT[i]; p._v=(p._v||0)+1; p.text=promoText(Object.assign({},p,{id:p.id+"#"+p._v})); render(); }
 });
@@ -460,12 +488,7 @@ setSource(SOURCE, true);
 
 /* ---------- identifiants Creators API ---------- */
 let API_STATE = "";
-function photoHint(){
-  if(!API_STATE) return "Photo : configurez l'API Amazon";
-  if(/NotEligible/i.test(API_STATE)) return "Photo disponible quand votre compte sera éligible à l'API";
-  if(API_STATE.startsWith("erreur")) return "Photo indisponible (erreur API)";
-  return "Photo non fournie par Amazon";
-}
+function photoHint(){ return "Pas de photo : collez une adresse ci-dessous ou cliquez sur « Chercher »"; }
 async function amzState(){
   try{ const c=await (await fetch("/api/amazon-config")).json();
     $("#amzState").textContent = c.configured ? `connectée (v${c.version}) ✓` : "à configurer"; return c; }catch{ return {}; }
